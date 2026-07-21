@@ -1,0 +1,12 @@
+# build output (CMake regenerates everything here, incl. fetched LVGL)
+build/
+
+# recorded data and runtime config live beside the binary, never in git
+logs/
+recorder.ini
+recorder_ui.bak
+recorder_ui.update
+
+# editor leftovers
+*.swp
+.vscode/

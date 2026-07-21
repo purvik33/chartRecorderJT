@@ -1,0 +1,15 @@
+[Unit]
+Description=Paperless recorder UI
+After=systemd-user-sessions.service
+
+[Service]
+Type=simple
+ExecStart=/opt/recorder/recorder_ui /dev/dri/card1 /dev/input/event0
+Restart=always
+RestartSec=2
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
