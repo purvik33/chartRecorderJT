@@ -783,9 +783,11 @@ function tickPolarClock(){
    BOOT
    ============================================================ */
 live();
-setInterval(live,2000);
+setInterval(live,1000);            // auto-refresh header/digital/bar every second
 tickPolarClock();
 setInterval(tickPolarClock,1000);
+// pull newly-logged samples into the polar dial while it is visible
+setInterval(()=>{if(curScreen==="polar")loadPolar(true);},10000);
 </script>
 </body>
 </html>
