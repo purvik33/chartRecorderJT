@@ -141,7 +141,7 @@ canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line
 #polar-clock{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   text-align:center;pointer-events:none;line-height:1.15;padding:16px 22px;
   border-radius:50%;
-  background:radial-gradient(closest-side,rgba(13,27,42,.94) 70%,transparent)}
+  background:radial-gradient(closest-side,rgba(13,27,42,.97) 74%,transparent)}
 #polar-clock .pt{font-size:27px;font-weight:700;color:var(--ink);
   letter-spacing:.5px}
 #polar-clock .pd{font-size:13px;color:var(--mut);margin-top:3px}
@@ -626,7 +626,7 @@ async function loadPolar(force){
 }
 const POLC=["#5DCAA5","#85B7EB","#F0997B","#ED93B1","#FAC775","#AFA9EC",
   "#97C459","#F09595"];
-const RIN_F=0.20;          // inner hole (clears the centre clock)
+const RIN_F=0.40;          // inner hole kept wide so traces clear the centre clock
 function drawPolar(c){
   const cv=$("polar-cv"),r=window.devicePixelRatio||1,
     W=cv.clientWidth,H=cv.clientHeight;
