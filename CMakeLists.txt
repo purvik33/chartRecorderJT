@@ -80,3 +80,13 @@ else()
         endforeach()
     endif()
 endif()
+
+# ship the web dashboard next to the binary; webserver.c serves this file
+# from disk (edit-and-refresh, no rebuild) and only falls back to the
+# compiled-in page if it is missing.
+if(EXISTS ${CMAKE_SOURCE_DIR}/dashboard.html)
+    add_custom_command(TARGET recorder_ui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_SOURCE_DIR}/dashboard.html
+                $<TARGET_FILE_DIR:recorder_ui>)
+endif()

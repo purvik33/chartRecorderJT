@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JETPACE PR-40 Recorder</title>
+<style>
+:root{
+  --bg:#0d1b2a;--card:#152638;--card2:#1a2f45;--line:#24405c;--ink:#e8eef4;
+  --mut:#8fa3b8;--acc:#4fc3f7;--alm:#ff6b6b;--warn:#e8a13c;--ok:#41d69c;
+  --sb:#0a1622;--rad:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  overflow-x:hidden;font-size:15px;line-height:1.4;
+}
+button{font-family:inherit}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* ---------- app frame ---------- */
+#app{display:grid;grid-template-columns:216px 1fr;grid-template-rows:auto 1fr;
+  grid-template-areas:"hdr hdr" "side main";height:100vh;}
+
+/* ---------- header ---------- */
+header{grid-area:hdr;display:flex;align-items:center;gap:16px;
+  padding:0 20px;height:60px;background:var(--card);
+  border-bottom:1px solid var(--line);position:relative;z-index:20;}
+.brand{font-size:19px;letter-spacing:1px;font-weight:600;white-space:nowrap;}
+.brand span{color:var(--acc);font-weight:500}
+.hdr-grp{color:var(--mut);font-size:13px;padding-left:16px;
+  border-left:1px solid var(--line);white-space:nowrap;}
+.hdr-grp b{color:var(--ink);font-weight:600}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:12px;
+  flex-wrap:wrap;justify-content:flex-end;}
+.pill{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;
+  font-weight:600;padding:5px 11px;border-radius:99px;letter-spacing:.4px;
+  background:rgba(143,163,184,.14);color:var(--mut);white-space:nowrap;}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mut);
+  flex:0 0 auto;}
+.pill.online{background:rgba(65,214,156,.14);color:var(--ok)}
+.pill.online .dot{background:var(--ok);box-shadow:0 0 6px rgba(65,214,156,.7)}
+.pill.offline{background:rgba(255,107,107,.14);color:var(--alm)}
+.pill.offline .dot{background:var(--alm)}
+.pill.alm-pill{background:rgba(255,107,107,.16);color:var(--alm)}
+.pill.alm-pill.clear{background:rgba(143,163,184,.14);color:var(--mut)}
+#clk{font-size:15px;font-weight:600;color:var(--ink);min-width:74px;
+  text-align:right;}
+#fw{font-size:11px;color:var(--mut);letter-spacing:.5px;}
+.hamb{display:none;background:none;border:1px solid var(--line);
+  color:var(--ink);border-radius:8px;padding:6px 9px;cursor:pointer;
+  font-size:16px;line-height:1;}
+
+/* ---------- sidebar ---------- */
+nav{grid-area:side;background:var(--sb);border-right:1px solid var(--line);
+  padding:14px 10px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;}
+.nav-item{display:flex;align-items:center;gap:12px;padding:11px 13px;
+  border-radius:9px;color:var(--mut);cursor:pointer;font-size:15px;
+  font-weight:500;border:1px solid transparent;user-select:none;
+  transition:background .12s,color .12s;}
+.nav-item:hover{background:var(--card);color:var(--ink)}
+.nav-item.active{background:var(--card2);color:var(--ink);
+  border-color:var(--line);}
+.nav-item.active .ic{color:var(--acc)}
+.nav-item .ic{width:20px;height:20px;flex:0 0 auto;color:var(--mut)}
+.nav-item svg{width:20px;height:20px;display:block;stroke:currentColor;
+  fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+.nav-badge{margin-left:auto;background:var(--alm);color:#fff;font-size:11px;
+  font-weight:700;min-width:19px;height:19px;border-radius:99px;
+  display:none;align-items:center;justify-content:center;padding:0 5px;}
+.nav-spacer{flex:1}
+.nav-foot{padding:10px 13px;color:var(--mut);font-size:11px;
+  border-top:1px solid var(--line);margin-top:6px;}
+
+/* ---------- main / content ---------- */
+main{grid-area:main;overflow-y:auto;overflow-x:hidden;padding:22px 24px 40px;}
+.screen{display:none;animation:fade .18s ease}
+.screen.active{display:block}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.scr-head{display:flex;align-items:baseline;gap:12px;margin-bottom:18px;
+  flex-wrap:wrap;}
+.scr-head h2{font-size:20px;font-weight:600;letter-spacing:.3px}
+.scr-head .sub{color:var(--mut);font-size:13px}
+.hint{color:var(--mut);font-size:12.5px;text-transform:uppercase;
+  letter-spacing:.6px;margin:0 0 12px}
+
+/* ---------- Digital grid ---------- */
+#dig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  gap:14px;}
+.ch{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);
+  padding:13px 15px;transition:border-color .15s;}
+.ch.alm{border-color:var(--alm)}
+.ch.flt{border-color:var(--warn)}
+.ch .hd{display:flex;justify-content:space-between;align-items:center;
+  color:var(--mut);font-size:12px;margin-bottom:9px;gap:8px}
+.ch .hd .tag{color:var(--ink);font-weight:600;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.chip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;
+  background:rgba(143,163,184,.16);color:var(--mut);letter-spacing:.5px;
+  flex:0 0 auto;}
+.chip.ok{background:rgba(65,214,156,.14);color:var(--ok)}
+.chip.alm{background:rgba(255,107,107,.16);color:var(--alm)}
+.chip.flt{background:rgba(232,161,60,.16);color:var(--warn)}
+.ch .val{font-size:30px;font-weight:600;line-height:1.15}
+.ch .val small{font-size:14px;color:var(--mut);font-weight:400;margin-left:5px}
+.ch .val .fault{font-size:20px;color:var(--warn);font-weight:600}
+.ch .sp{display:flex;justify-content:space-between;color:var(--mut);
+  font-size:12px;border-top:1px solid var(--line);margin-top:11px;padding-top:8px}
+
+/* ---------- Bar view ---------- */
+#bar-list{display:flex;flex-direction:column;gap:12px}
+.bar-row{background:var(--card);border:1px solid var(--line);
+  border-radius:var(--rad);padding:11px 15px;}
+.bar-top{display:flex;justify-content:space-between;align-items:baseline;
+  margin-bottom:8px;gap:10px}
+.bar-top .lbl{font-size:13px;color:var(--mut)}
+.bar-top .lbl b{color:var(--ink);font-weight:600}
+.bar-top .rv{font-size:16px;font-weight:600}
+.bar-top .rv small{font-size:12px;color:var(--mut);font-weight:400;margin-left:3px}
+.bar-track{height:14px;background:var(--sb);border-radius:8px;overflow:hidden;
+  border:1px solid var(--line);position:relative}
+.bar-fill{height:100%;border-radius:7px 0 0 7px;background:var(--acc);
+  transition:width .35s ease,background .2s;min-width:0}
+.bar-scale{display:flex;justify-content:space-between;color:var(--mut);
+  font-size:11px;margin-top:5px}
+
+/* ---------- Trend / canvas ---------- */
+.ctl-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+select,.btn{background:var(--card2);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer;}
+select:hover,.btn:hover{border-color:var(--acc)}
+.card-box{background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:16px;}
+.cvw{position:relative}
+canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line);
+  border-radius:8px;}
+#trend-cv{height:400px}
+#polar-cv{height:460px}
+#polar-clock{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  text-align:center;pointer-events:none;line-height:1.15;padding:16px 22px;
+  border-radius:50%;
+  background:radial-gradient(closest-side,rgba(13,27,42,.94) 70%,transparent)}
+#polar-clock .pt{font-size:27px;font-weight:700;color:var(--ink);
+  letter-spacing:.5px}
+#polar-clock .pd{font-size:13px;color:var(--mut);margin-top:3px}
+#tip{position:absolute;display:none;background:#1d3550;border:1px solid var(--acc);
+  border-radius:6px;padding:5px 10px;font-size:13px;pointer-events:none;
+  white-space:nowrap;font-variant-numeric:tabular-nums;z-index:5}
+.stats{display:flex;gap:22px;color:var(--mut);font-size:13.5px;margin-top:12px;
+  flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.stats b{color:var(--ink)}
+
+/* ---------- Alarm table ---------- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;
+  background:var(--card)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:520px}
+th{text-align:left;padding:11px 14px;color:var(--mut);font-weight:600;
+  text-transform:uppercase;font-size:11.5px;letter-spacing:.5px;
+  border-bottom:1px solid var(--line);white-space:nowrap;background:var(--card2)}
+td{padding:10px 14px;border-bottom:1px solid var(--line);
+  font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+td .st{font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px;
+  background:rgba(255,107,107,.16);color:var(--alm)}
+td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
+
+/* ---------- Settings ---------- */
+.set-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:14px;margin-bottom:18px}
+.set-card{background:var(--card);border:1px solid var(--line);
+  border-radius:var(--rad);padding:15px 16px}
+.set-card .k{color:var(--mut);font-size:12px;text-transform:uppercase;
+  letter-spacing:.6px;margin-bottom:8px}
+.set-card .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.note{background:rgba(232,161,60,.1);border:1px solid rgba(232,161,60,.35);
+  color:var(--warn);border-radius:10px;padding:13px 16px;font-size:13.5px}
+
+/* ---------- empty state ---------- */
+.empty{background:var(--card);border:1px dashed var(--line);border-radius:12px;
+  padding:40px 20px;text-align:center;color:var(--mut);font-size:14px}
+.empty .big{font-size:32px;margin-bottom:8px;opacity:.5}
+
+/* ---------- responsive ---------- */
+@media(max-width:860px){
+  #app{grid-template-columns:1fr;grid-template-areas:"hdr" "main"}
+  nav{position:fixed;top:60px;left:0;bottom:0;width:230px;z-index:30;
+    transform:translateX(-100%);transition:transform .22s ease;
+    box-shadow:8px 0 24px rgba(0,0,0,.4)}
+  nav.open{transform:translateX(0)}
+  .hamb{display:block;order:-1}
+  .hdr-grp{display:none}
+  #scrim{display:none;position:fixed;inset:60px 0 0 0;background:rgba(6,13,20,.6);
+    z-index:25}
+  #scrim.show{display:block}
+}
+@media(max-width:520px){
+  .brand{font-size:15px}
+  header{gap:10px;padding:0 12px}
+  main{padding:16px 14px 34px}
+  .pill{padding:4px 8px;font-size:11.5px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button class="hamb" id="hamb" aria-label="Menu">&#9776;</button>
+    <div class="brand">JETPACE <span>&mdash; PR-40 Recorder</span></div>
+    <div class="hdr-grp" id="hdr-grp">Group &middot; CH</div>
+    <div class="hdr-right">
+      <span class="pill" id="p-link"><span class="dot"></span>&mdash;</span>
+      <span class="pill alm-pill clear" id="p-alm">0 alarms</span>
+      <span id="clk" class="tnum">--:--:--</span>
+      <span id="fw">v0.0.0</span>
+    </div>
+  </header>
+
+  <nav id="nav">
+    <div class="nav-item active" data-scr="digital">
+      <span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+      <span>Digital</span></div>
+    <div class="nav-item" data-scr="trend">
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-8 4 5"/><path d="M3 21h18"/></svg></span>
+      <span>Trend</span></div>
+    <div class="nav-item" data-scr="polar">
+      <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 12V4"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg></span>
+      <span>Polar</span></div>
+    <div class="nav-item" data-scr="bar">
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg></span>
+      <span>Bar</span></div>
+    <div class="nav-item" data-scr="alarm">
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+      <span>Alarm</span><span class="nav-badge" id="nav-alm">0</span></div>
+    <div class="nav-spacer"></div>
+    <div class="nav-item" data-scr="settings">
+      <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      <span>Settings</span></div>
+    <div class="nav-foot" id="nav-foot">JETPACE PR-40</div>
+  </nav>
+
+  <div id="scrim"></div>
+
+  <main>
+    <!-- DIGITAL -->
+    <section class="screen active" id="s-digital">
+      <div class="scr-head"><h2>Digital</h2>
+        <span class="sub" id="dig-sub"></span></div>
+      <div id="dig-grid"></div>
+    </section>
+
+    <!-- TREND -->
+    <section class="screen" id="s-trend">
+      <div class="scr-head"><h2>Trend</h2>
+        <span class="sub">Today's stored samples</span></div>
+      <div class="ctl-row">
+        <select id="trend-sel"></select>
+        <button class="btn" id="trend-reload">Reload</button>
+      </div>
+      <div class="card-box">
+        <div class="cvw"><canvas id="trend-cv"></canvas><div id="tip"></div></div>
+        <div class="stats" id="trend-stats">Select a channel.</div>
+      </div>
+    </section>
+
+    <!-- POLAR -->
+    <section class="screen" id="s-polar">
+      <div class="scr-head"><h2>Polar</h2>
+        <span class="sub">24-hour circular chart (midnight top, clockwise)</span></div>
+      <div class="ctl-row">
+        <select id="polar-sel"><option value="-1">All channels</option></select>
+        <button class="btn" id="polar-reload">Reload</button>
+      </div>
+      <div class="card-box">
+        <div class="cvw"><canvas id="polar-cv"></canvas>
+          <div id="polar-clock"><div class="pt tnum" id="pol-t">--:--:--</div>
+            <div class="pd" id="pol-d"></div></div>
+        </div>
+        <div class="stats" id="polar-stats">Values normalized to each channel's lo/hi range.</div>
+      </div>
+    </section>
+
+    <!-- BAR -->
+    <section class="screen" id="s-bar">
+      <div class="scr-head"><h2>Bar</h2>
+        <span class="sub">Live &mdash; fill = (value &minus; lo) / (hi &minus; lo)</span></div>
+      <div id="bar-list"></div>
+    </section>
+
+    <!-- ALARM -->
+    <section class="screen" id="s-alarm">
+      <div class="scr-head"><h2>Alarms</h2>
+        <span class="sub" id="alm-sub"></span></div>
+      <div id="alm-body"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="screen" id="s-settings">
+      <div class="scr-head"><h2>Settings</h2>
+        <span class="sub">Read-only</span></div>
+      <div class="set-grid">
+        <div class="set-card"><div class="k">Firmware</div><div class="v" id="set-fw">&mdash;</div></div>
+        <div class="set-card"><div class="k">Current group</div><div class="v" id="set-grp">&mdash;</div></div>
+        <div class="set-card"><div class="k">Channels</div><div class="v" id="set-ch">&mdash;</div></div>
+        <div class="set-card"><div class="k">RS-485 link</div><div class="v" id="set-link">&mdash;</div></div>
+      </div>
+      <div class="note">Configuration editing from the browser is not enabled yet (read-only).</div>
+    </section>
+  </main>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const CH_PER_GROUP=8;
+const FAULT=new Set(["SKIP","UNDER","OVER","OPEN","COMM"]);
+const isNum=s=>(s==="OK"||s==="HI"||s==="LO");
+const chipClass=s=>s==="OK"?"ok":(s==="HI"||s==="LO")?"alm":"flt";
+
+let LIVE=null;         // last /api/live payload
+let nCh=0;             // channel count
+let digCards=[];       // digital DOM tiles
+let barRows=[];        // bar DOM rows
+let curScreen="digital";
+let selBuilt=false;
+
+/* ---------- day string ---------- */
+function today(){
+  const t=new Date(),p=n=>String(n).padStart(2,"0");
+  return `${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}`;
+}
+
+/* ============================================================
+   NAV / ROUTING
+   ============================================================ */
+document.querySelectorAll(".nav-item[data-scr]").forEach(el=>{
+  el.onclick=()=>go(el.dataset.scr);
+});
+function go(scr){
+  curScreen=scr;
+  document.querySelectorAll(".nav-item[data-scr]").forEach(el=>
+    el.classList.toggle("active",el.dataset.scr===scr));
+  document.querySelectorAll(".screen").forEach(el=>
+    el.classList.toggle("active",el.id==="s-"+scr));
+  closeNav();
+  // lazy loads
+  if(scr==="trend")onTrendShow();
+  if(scr==="polar")onPolarShow();
+  if(scr==="alarm")loadAlarms();
+  if(scr==="settings")fillSettings();
+}
+/* mobile drawer */
+$("hamb").onclick=()=>{const n=$("nav");n.classList.toggle("open");
+  $("scrim").classList.toggle("show",n.classList.contains("open"));};
+$("scrim").onclick=closeNav;
+function closeNav(){$("nav").classList.remove("open");$("scrim").classList.remove("show");}
+
+/* ============================================================
+   LIVE POLL (every 2s) — updates header + Digital + Bar in place
+   ============================================================ */
+async function live(){
+  try{
+    const r=await fetch("/api/live");
+    if(!r.ok)throw 0;
+    const j=await r.json();
+    // backend sends alarm setpoints as lo/hi and the channel RANGE as
+    // rlo/rhi; this UI normalizes bar/polar to the range, so alias them.
+    j.ch.forEach(c=>{if("rlo"in c){c.lo=c.rlo;c.hi=c.rhi;}});
+    LIVE=j;
+    if(nCh!==j.ch.length){nCh=j.ch.length;buildDigital(nCh);buildBar(nCh);
+      buildSelectors(j.ch);}
+    updateHeader(j);
+    updateDigital(j);
+    updateBar(j);
+    if(curScreen==="settings")fillSettings();
+  }catch(e){
+    $("clk").textContent="offline";
+    $("p-link").className="pill offline";
+    $("p-link").innerHTML="<span class='dot'></span>NO LINK";
+  }
+}
+
+function updateHeader(j){
+  $("clk").textContent=j.time||"--:--:--";
+  $("fw").textContent="v"+(j.fw||"?");
+  const lo=(j.grp-1)*CH_PER_GROUP+1, hi=j.grp*CH_PER_GROUP;
+  $("hdr-grp").innerHTML=`<b>Group ${j.grp}</b> &middot; CH ${lo}&ndash;${hi}`;
+  // link pill
+  const pl=$("p-link");
+  pl.className="pill "+(j.link?"online":"offline");
+  pl.innerHTML=`<span class='dot'></span>${j.link?"ONLINE":"NO LINK"}`;
+  // alarm pill
+  const pa=$("p-alm"),n=j.alarms|0;
+  pa.className="pill alm-pill"+(n>0?"":" clear");
+  pa.textContent=n+(n===1?" alarm":" alarms");
+  // nav badge
+  const nb=$("nav-alm");
+  nb.style.display=n>0?"flex":"none";nb.textContent=n;
+}
+
+/* ---------- Digital ---------- */
+function buildDigital(n){
+  const g=$("dig-grid");g.innerHTML="";digCards=[];
+  for(let i=0;i<n;i++){
+    const d=document.createElement("div");
+    d.className="ch";
+    d.innerHTML=`<div class="hd"><span class="tag">CH${i+1}</span>`+
+      `<span class="chip">--</span></div>`+
+      `<div class="val tnum">-</div>`+
+      `<div class="sp"><span class="lo">L -</span><span class="hi">H -</span></div>`;
+    d.title="Open in Trend";
+    d.style.cursor="pointer";
+    d.onclick=()=>{$("trend-sel").value=String(i);go("trend");};
+    g.appendChild(d);digCards.push(d);
+  }
+  $("dig-sub").textContent=n+" channels";
+}
+function updateDigital(j){
+  if(!digCards.length)return;
+  j.ch.forEach((c,i)=>{
+    const d=digCards[i];if(!d)return;
+    const hd=d.children[0],chip=hd.children[1],val=d.children[1],sp=d.children[2];
+    hd.children[0].textContent=`CH${c.n}  ${c.tag}`;
+    chip.textContent=c.status;chip.className="chip "+chipClass(c.status);
+    const alm=(c.status==="HI"||c.status==="LO");
+    const flt=FAULT.has(c.status);
+    d.classList.toggle("alm",alm);
+    d.classList.toggle("flt",flt);
+    val.innerHTML=isNum(c.status)
+      ? `${c.value.toFixed(1)}<small>${c.unit}</small>`
+      : `<span class="fault">${c.status}</span>`;
+    sp.children[0].textContent="L "+fmtSp(c.lo);
+    sp.children[1].textContent="H "+fmtSp(c.hi);
+  });
+}
+function fmtSp(v){return (Math.abs(v)>=1000||Number.isInteger(v))?String(v):v.toFixed(1);}
+
+/* ---------- Bar ---------- */
+function buildBar(n){
+  const g=$("bar-list");g.innerHTML="";barRows=[];
+  for(let i=0;i<n;i++){
+    const d=document.createElement("div");
+    d.className="bar-row";
+    d.innerHTML=`<div class="bar-top"><span class="lbl">CH${i+1} <b></b></span>`+
+      `<span class="rv tnum">-</span></div>`+
+      `<div class="bar-track"><div class="bar-fill"></div></div>`+
+      `<div class="bar-scale"><span class="s0"></span><span class="s1"></span></div>`;
+    g.appendChild(d);barRows.push(d);
+  }
+}
+function updateBar(j){
+  if(!barRows.length)return;
+  j.ch.forEach((c,i)=>{
+    const d=barRows[i];if(!d)return;
+    const top=d.children[0],fill=d.children[1].children[0],scale=d.children[2];
+    top.children[0].innerHTML=`CH${c.n} <b>${c.tag}</b>`;
+    const rv=top.children[1];
+    rv.innerHTML=isNum(c.status)?`${c.value.toFixed(1)}<small>${c.unit}</small>`
+      :`<span style="color:var(--warn)">${c.status}</span>`;
+    let frac=0;
+    if(isNum(c.status)&&c.hi>c.lo){
+      frac=(c.value-c.lo)/(c.hi-c.lo);
+      frac=Math.max(0,Math.min(1,frac));
+    }
+    fill.style.width=(frac*100).toFixed(1)+"%";
+    let col=getComputedStyle(document.documentElement).getPropertyValue("--acc");
+    if(c.status==="HI"||c.status==="LO")col="var(--alm)";
+    else if(FAULT.has(c.status))col="var(--warn)";
+    else col="var(--acc)";
+    fill.style.background=col;
+    scale.children[0].textContent=fmtSp(c.lo);
+    scale.children[1].textContent=fmtSp(c.hi);
+  });
+}
+
+/* ---------- selectors (Trend + Polar) ---------- */
+function buildSelectors(ch){
+  if(selBuilt)return;selBuilt=true;
+  const ts=$("trend-sel"),ps=$("polar-sel");
+  ch.forEach((c,i)=>{
+    const o=document.createElement("option");
+    o.value=String(i);o.textContent=`CH${c.n} — ${c.tag}`;
+    ts.appendChild(o);
+    const o2=o.cloneNode(true);ps.appendChild(o2);
+  });
+}
+
+/* ============================================================
+   CSV LOADING (cached per day)
+   ============================================================ */
+let csvCache={day:null,rows:null,hdr:null,promise:null};
+async function loadCsv(force){
+  const day=today();
+  if(!force&&csvCache.day===day&&csvCache.rows)return csvCache;
+  if(csvCache.promise&&csvCache.day===day&&!force)return csvCache.promise;
+  csvCache.day=day;
+  csvCache.promise=(async()=>{
+    try{
+      const r=await fetch(`/logs/${day}.csv`);
+      if(!r.ok)throw 0;
+      const txt=await r.text();
+      const lines=txt.trim().split("\n").filter(l=>l.length);
+      const hdr=lines.shift().split(",");
+      const rows=lines.map(l=>l.split(","));
+      csvCache.rows=rows;csvCache.hdr=hdr;
+    }catch(e){csvCache.rows=[];csvCache.hdr=null;}
+    return csvCache;
+  })();
+  return csvCache.promise;
+}
+
+/* extract series for channel index i => [{t,v}] using numeric samples */
+function seriesFor(rows,i){
+  const out=[];
+  rows.forEach(c=>{
+    const st=c[2+2*i];
+    if(isNum(st)){
+      const v=parseFloat(c[1+2*i]);
+      if(!isNaN(v))out.push({t:c[0].slice(11,16),full:c[0].slice(11,19),v});
+    }
+  });
+  return out;
+}
+
+/* ============================================================
+   TREND (canvas line, hover tooltip, min/max/avg)
+   ============================================================ */
+let TP=[],tpu="",tpl=0,tph=1,tpTag="";
+async function onTrendShow(){
+  if($("trend-sel").value==="")return;
+  await loadTrend();
+}
+$("trend-sel").onchange=loadTrend;
+$("trend-reload").onclick=()=>loadTrend(true);
+
+async function loadTrend(force){
+  const i=parseInt($("trend-sel").value||"0",10);
+  const c=await loadCsv(force===true);
+  if(!c.rows||!c.rows.length){
+    TP=[];drawTrendEmpty("No stored samples for today yet.");
+    $("trend-stats").textContent="";return;
+  }
+  TP=seriesFor(c.rows,i);
+  tpu=(LIVE&&LIVE.ch[i])?LIVE.ch[i].unit:"";
+  tpTag=(c.hdr&&c.hdr[1+2*i])?c.hdr[1+2*i]:(LIVE&&LIVE.ch[i]?LIVE.ch[i].tag:"");
+  if(!TP.length){drawTrendEmpty("No valid samples for this channel today.");
+    $("trend-stats").textContent="";return;}
+  let lo=Math.min(...TP.map(p=>p.v)),hi=Math.max(...TP.map(p=>p.v));
+  if(hi-lo<1e-6){lo-=1;hi+=1;}
+  const pad=(hi-lo)*0.08;tpl=lo-pad;tph=hi+pad;
+  const avg=TP.reduce((a,p)=>a+p.v,0)/TP.length;
+  $("trend-stats").innerHTML=
+    `<span>CH${i+1} <b>${tpTag}</b></span>`+
+    `<span>Samples <b>${TP.length}</b></span>`+
+    `<span>Min <b>${lo.toFixed(1)}</b></span>`+
+    `<span>Max <b>${hi.toFixed(1)}</b></span>`+
+    `<span>Avg <b>${avg.toFixed(1)}</b> ${tpu}</span>`;
+  drawTrend(null);
+}
+function drawTrendEmpty(msg){
+  const cv=$("trend-cv"),r=window.devicePixelRatio||1,
+    W=cv.clientWidth,H=cv.clientHeight;
+  cv.width=W*r;cv.height=H*r;const x=cv.getContext("2d");x.scale(r,r);
+  x.clearRect(0,0,W,H);x.fillStyle="#8fa3b8";x.font="14px system-ui";
+  x.textAlign="center";x.fillText(msg,W/2,H/2);
+}
+function drawTrend(hov){
+  const cv=$("trend-cv"),r=window.devicePixelRatio||1,
+    W=cv.clientWidth,H=cv.clientHeight;
+  cv.width=W*r;cv.height=H*r;const x=cv.getContext("2d");x.scale(r,r);
+  x.clearRect(0,0,W,H);
+  if(!TP.length){drawTrendEmpty("No data.");return;}
+  const L=60,R=18,T=18,B=36,pw=W-L-R,ph=H-T-B,n=TP.length;
+  x.strokeStyle="#24405c";x.fillStyle="#8fa3b8";x.font="12px system-ui";x.lineWidth=1;
+  for(let k=0;k<=4;k++){const y=T+ph*k/4,v=tph-(tph-tpl)*k/4;
+    x.beginPath();x.moveTo(L,y);x.lineTo(W-R,y);x.stroke();
+    x.textAlign="right";x.fillText(v.toFixed(1),L-8,y+4);}
+  x.textAlign="center";
+  for(let k=0;k<=5;k++){const idx=Math.round((n-1)*k/5);
+    if(TP[idx])x.fillText(TP[idx].t,L+pw*k/5,H-12);}
+  x.strokeStyle="#4fc3f7";x.lineWidth=2;x.beginPath();
+  TP.forEach((p,k)=>{const px=L+pw*k/Math.max(1,n-1),
+    py=T+ph*(1-(p.v-tpl)/(tph-tpl));k?x.lineTo(px,py):x.moveTo(px,py);});
+  x.stroke();
+  if(hov!=null&&TP[hov]){
+    const px=L+pw*hov/Math.max(1,n-1),py=T+ph*(1-(TP[hov].v-tpl)/(tph-tpl));
+    x.strokeStyle="rgba(79,195,247,.4)";x.lineWidth=1;x.beginPath();
+    x.moveTo(px,T);x.lineTo(px,T+ph);x.stroke();
+    x.fillStyle="#0d1b2a";x.beginPath();x.arc(px,py,5,0,7);x.fill();
+    x.strokeStyle="#4fc3f7";x.lineWidth=2;x.beginPath();x.arc(px,py,5,0,7);x.stroke();
+    const tip=$("tip");tip.style.display="block";
+    tip.textContent=`${TP[hov].full||TP[hov].t}   ${TP[hov].v.toFixed(1)} ${tpu}`;
+    const bw=tip.offsetWidth;
+    tip.style.left=Math.min(Math.max(px-bw/2,4),W-bw-4)+"px";
+    tip.style.top=(py<70?py+16:py-40)+"px";
+  }else $("tip").style.display="none";
+}
+$("trend-cv").onmousemove=e=>{
+  if(!TP.length)return;
+  const rc=$("trend-cv").getBoundingClientRect(),L=60,pw=rc.width-60-18;
+  let i=Math.round((e.clientX-rc.left-L)/pw*(TP.length-1));
+  if(i>=0&&i<TP.length)drawTrend(i);
+};
+$("trend-cv").onmouseleave=()=>drawTrend(null);
+
+/* ============================================================
+   POLAR (24h dial, midnight top, clockwise)
+   ============================================================ */
+async function onPolarShow(){await loadPolar();}
+$("polar-sel").onchange=loadPolar;
+$("polar-reload").onclick=()=>loadPolar(true);
+
+function minutesOfDay(fullHHMMSS){
+  const p=fullHHMMSS.split(":");
+  return (+p[0])*60+(+p[1])+(+(p[2]||0))/60;
+}
+async function loadPolar(force){
+  const c=await loadCsv(force===true);
+  if(!c.rows||!c.rows.length){drawPolar(null);return;}
+  drawPolar(c);
+}
+function drawPolar(c){
+  const cv=$("polar-cv"),r=window.devicePixelRatio||1,
+    W=cv.clientWidth,H=cv.clientHeight;
+  cv.width=W*r;cv.height=H*r;const x=cv.getContext("2d");x.scale(r,r);
+  x.clearRect(0,0,W,H);
+  const cx=W/2,cy=H/2,R=Math.min(W,H)/2-30;
+  // rings
+  x.strokeStyle="#24405c";x.lineWidth=1;
+  for(let k=1;k<=4;k++){x.beginPath();x.arc(cx,cy,R*k/4,0,7);x.stroke();}
+  // hour spokes + labels
+  x.fillStyle="#8fa3b8";x.font="11px system-ui";x.textAlign="center";x.textBaseline="middle";
+  for(let hh=0;hh<24;hh+=3){
+    const ang=-Math.PI/2+hh/24*2*Math.PI; // midnight top, clockwise
+    const x1=cx+Math.cos(ang)*R,y1=cy+Math.sin(ang)*R;
+    x.strokeStyle="#1b3350";x.beginPath();x.moveTo(cx,cy);x.lineTo(x1,y1);x.stroke();
+    const lx=cx+Math.cos(ang)*(R+16),ly=cy+Math.sin(ang)*(R+16);
+    x.fillStyle="#8fa3b8";x.fillText(String(hh).padStart(2,"0"),lx,ly);
+  }
+  if(!c||!c.rows||!c.rows.length){
+    x.fillStyle="#8fa3b8";x.font="14px system-ui";
+    x.fillText("No stored samples for today yet.",cx,cy);
+    $("polar-stats").textContent="";return;
+  }
+  const sel=parseInt($("polar-sel").value,10);
+  const colors=["#4fc3f7","#41d69c","#e8a13c","#ff6b6b","#b388ff",
+    "#ffd166","#06d6a0","#ef476f"];
+  const idxs=[];
+  if(sel<0){for(let i=0;i<nCh;i++)idxs.push(i);}else idxs.push(sel);
+  let plotted=0;
+  idxs.forEach((i,ci)=>{
+    const s=seriesFor(c.rows,i);
+    if(s.length<2)return;
+    // normalize to channel lo/hi (fallback to data range)
+    let lo,hi;
+    if(LIVE&&LIVE.ch[i]&&LIVE.ch[i].hi>LIVE.ch[i].lo){
+      lo=LIVE.ch[i].lo;hi=LIVE.ch[i].hi;
+    }else{lo=Math.min(...s.map(p=>p.v));hi=Math.max(...s.map(p=>p.v));
+      if(hi-lo<1e-6){lo-=1;hi+=1;}}
+    const col=colors[(sel<0?i:0)%colors.length];
+    x.strokeStyle=col;x.lineWidth=1.8;x.beginPath();
+    s.forEach((p,k)=>{
+      let f=(p.v-lo)/(hi-lo);f=Math.max(0,Math.min(1,f));
+      const rad=R*(0.12+0.88*f); // keep a small inner hole
+      const ang=-Math.PI/2+minutesOfDay(p.full)/1440*2*Math.PI;
+      const px=cx+Math.cos(ang)*rad,py=cy+Math.sin(ang)*rad;
+      k?x.lineTo(px,py):x.moveTo(px,py);
+    });
+    x.stroke();plotted++;
+  });
+  // legend / stats
+  if(sel<0){
+    $("polar-stats").innerHTML=`<span>${plotted} channel(s) plotted, `+
+      `each normalized to its lo/hi range.</span>`;
+  }else{
+    const tag=(LIVE&&LIVE.ch[sel])?LIVE.ch[sel].tag:"";
+    $("polar-stats").innerHTML=`<span>CH${sel+1} <b>${tag}</b> `+
+      `normalized to lo/hi range.</span>`;
+  }
+}
+
+/* ============================================================
+   ALARMS (parse /logs/alarms-<today>.csv)
+   ============================================================ */
+async function loadAlarms(){
+  const day=today();
+  const active=LIVE?(LIVE.alarms|0):0;
+  $("alm-sub").innerHTML=`${active} active now &middot; ${day}`;
+  const body=$("alm-body");
+  let txt=null;
+  try{const r=await fetch(`/logs/alarms-${day}.csv`);if(r.ok)txt=await r.text();}
+  catch(e){}
+  if(txt===null){
+    body.innerHTML=`<div class="empty"><div class="big">&#9873;</div>`+
+      `No alarm log file for today.</div>`;return;
+  }
+  const lines=txt.trim().split("\n").filter(l=>l.length);
+  if(lines.length<=1){
+    body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
+      `No alarms recorded today.</div>`;return;
+  }
+  const hdr=lines.shift().split(",");
+  const rows=lines.map(l=>splitCsv(l));
+  // newest first
+  rows.reverse();
+  let html=`<div class="tbl-wrap"><table><thead><tr>`+
+    hdr.map(h=>`<th>${esc(h.trim())}</th>`).join("")+`</tr></thead><tbody>`;
+  rows.forEach(cols=>{
+    html+="<tr>"+cols.map((cell,i)=>{
+      const c=esc((cell||"").trim());
+      const hl=(hdr[i]||"").toLowerCase();
+      if(/type|state|status|event/.test(hl)&&c){
+        const clr=/clear|ok|normal|reset|off/i.test(c);
+        return `<td><span class="st${clr?" clr":""}">${c}</span></td>`;
+      }
+      return `<td>${c}</td>`;
+    }).join("")+"</tr>";
+  });
+  html+="</tbody></table></div>";
+  body.innerHTML=html;
+}
+function splitCsv(l){return l.split(",");}
+function esc(s){return String(s).replace(/[&<>"]/g,m=>(
+  {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));}
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+function fillSettings(){
+  if(!LIVE)return;
+  $("set-fw").textContent="v"+(LIVE.fw||"?");
+  $("set-grp").textContent=LIVE.grp;
+  $("set-ch").textContent=LIVE.ch.length;
+  $("set-link").innerHTML=LIVE.link
+    ?`<span style="color:var(--ok)">ONLINE</span>`
+    :`<span style="color:var(--alm)">NO LINK</span>`;
+}
+
+/* ============================================================
+   RESIZE — redraw active canvas
+   ============================================================ */
+let rzT=null;
+window.addEventListener("resize",()=>{
+  clearTimeout(rzT);
+  rzT=setTimeout(()=>{
+    if(curScreen==="trend")drawTrend(null);
+    if(curScreen==="polar")loadPolar();
+  },120);
+});
+
+/* ============================================================
+   POLAR CENTRE CLOCK (live, ticks every second)
+   ============================================================ */
+function tickPolarClock(){
+  const t=new Date(),p=n=>String(n).padStart(2,"0");
+  $("pol-t").textContent=`${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
+  $("pol-d").textContent=today();
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+live();
+setInterval(live,2000);
+tickPolarClock();
+setInterval(tickPolarClock,1000);
+</script>
+</body>
+</html>
