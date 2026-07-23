@@ -145,6 +145,10 @@ canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line
 #polar-clock .pt{font-size:27px;font-weight:700;color:var(--ink);
   letter-spacing:.5px}
 #polar-clock .pd{font-size:13px;color:var(--mut);margin-top:3px}
+.pleg{display:flex;flex-wrap:wrap;gap:7px 16px;justify-content:center;width:100%}
+.pleg span{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;
+  color:var(--ink)}
+.pleg i{width:11px;height:11px;border-radius:3px;display:inline-block;flex:0 0 auto}
 #tip{position:absolute;display:none;background:#1d3550;border:1px solid var(--acc);
   border-radius:6px;padding:5px 10px;font-size:13px;pointer-events:none;
   white-space:nowrap;font-variant-numeric:tabular-nums;z-index:5}
@@ -620,64 +624,81 @@ async function loadPolar(force){
   if(!c.rows||!c.rows.length){drawPolar(null);return;}
   drawPolar(c);
 }
+const POLC=["#5DCAA5","#85B7EB","#F0997B","#ED93B1","#FAC775","#AFA9EC",
+  "#97C459","#F09595"];
+const RIN_F=0.20;          // inner hole (clears the centre clock)
 function drawPolar(c){
   const cv=$("polar-cv"),r=window.devicePixelRatio||1,
     W=cv.clientWidth,H=cv.clientHeight;
   cv.width=W*r;cv.height=H*r;const x=cv.getContext("2d");x.scale(r,r);
   x.clearRect(0,0,W,H);
-  const cx=W/2,cy=H/2,R=Math.min(W,H)/2-30;
-  // rings
-  x.strokeStyle="#24405c";x.lineWidth=1;
-  for(let k=1;k<=4;k++){x.beginPath();x.arc(cx,cy,R*k/4,0,7);x.stroke();}
-  // hour spokes + labels
-  x.fillStyle="#8fa3b8";x.font="11px system-ui";x.textAlign="center";x.textBaseline="middle";
+  const cx=W/2,cy=H/2,R=Math.min(W,H)/2-26,rin=R*RIN_F;
+  // dial backdrop (subtle depth)
+  const bg=x.createRadialGradient(cx,cy,rin,cx,cy,R);
+  bg.addColorStop(0,"rgba(31,54,80,.30)");
+  bg.addColorStop(1,"rgba(21,38,56,.10)");
+  x.fillStyle=bg;x.beginPath();x.arc(cx,cy,R,0,7);x.fill();
+  // hour spokes (behind rings)
   for(let hh=0;hh<24;hh+=3){
     const ang=-Math.PI/2+hh/24*2*Math.PI; // midnight top, clockwise
-    const x1=cx+Math.cos(ang)*R,y1=cy+Math.sin(ang)*R;
-    x.strokeStyle="#1b3350";x.beginPath();x.moveTo(cx,cy);x.lineTo(x1,y1);x.stroke();
-    const lx=cx+Math.cos(ang)*(R+16),ly=cy+Math.sin(ang)*(R+16);
-    x.fillStyle="#8fa3b8";x.fillText(String(hh).padStart(2,"0"),lx,ly);
+    x.strokeStyle="rgba(79,123,168,.22)";x.lineWidth=1;x.beginPath();
+    x.moveTo(cx+Math.cos(ang)*rin,cy+Math.sin(ang)*rin);
+    x.lineTo(cx+Math.cos(ang)*R,cy+Math.sin(ang)*R);x.stroke();
+  }
+  // rings
+  x.lineWidth=1;
+  for(let k=1;k<=4;k++){
+    x.strokeStyle=k===4?"#3a5f86":"#274565";
+    x.beginPath();x.arc(cx,cy,rin+(R-rin)*k/4,0,7);x.stroke();}
+  // hour labels
+  x.fillStyle="#9fb4c9";x.font="600 11px system-ui";
+  x.textAlign="center";x.textBaseline="middle";
+  for(let hh=0;hh<24;hh+=3){
+    const ang=-Math.PI/2+hh/24*2*Math.PI;
+    const lx=cx+Math.cos(ang)*(R+15),ly=cy+Math.sin(ang)*(R+15);
+    x.fillText(String(hh).padStart(2,"0"),lx,ly);
   }
   if(!c||!c.rows||!c.rows.length){
-    x.fillStyle="#8fa3b8";x.font="14px system-ui";
-    x.fillText("No stored samples for today yet.",cx,cy);
-    $("polar-stats").textContent="";return;
+    $("polar-stats").innerHTML=
+      `<span style="color:var(--mut)">No stored samples for today yet &mdash; `+
+      `the dial fills clockwise as data is logged.</span>`;
+    return;
   }
   const sel=parseInt($("polar-sel").value,10);
-  const colors=["#4fc3f7","#41d69c","#e8a13c","#ff6b6b","#b388ff",
-    "#ffd166","#06d6a0","#ef476f"];
   const idxs=[];
   if(sel<0){for(let i=0;i<nCh;i++)idxs.push(i);}else idxs.push(sel);
-  let plotted=0;
-  idxs.forEach((i,ci)=>{
+  const leg=[];
+  x.lineJoin="round";x.lineCap="round";
+  idxs.forEach(i=>{
     const s=seriesFor(c.rows,i);
-    if(s.length<2)return;
-    // normalize to channel lo/hi (fallback to data range)
+    if(s.length<1)return;
     let lo,hi;
     if(LIVE&&LIVE.ch[i]&&LIVE.ch[i].hi>LIVE.ch[i].lo){
       lo=LIVE.ch[i].lo;hi=LIVE.ch[i].hi;
     }else{lo=Math.min(...s.map(p=>p.v));hi=Math.max(...s.map(p=>p.v));
       if(hi-lo<1e-6){lo-=1;hi+=1;}}
-    const col=colors[(sel<0?i:0)%colors.length];
-    x.strokeStyle=col;x.lineWidth=1.8;x.beginPath();
-    s.forEach((p,k)=>{
-      let f=(p.v-lo)/(hi-lo);f=Math.max(0,Math.min(1,f));
-      const rad=R*(0.12+0.88*f); // keep a small inner hole
+    const col=POLC[i%POLC.length];
+    const pt=p=>{let f=(p.v-lo)/(hi-lo);f=f<0?0:f>1?1:f;
+      const rad=rin+f*(R-rin);
       const ang=-Math.PI/2+minutesOfDay(p.full)/1440*2*Math.PI;
-      const px=cx+Math.cos(ang)*rad,py=cy+Math.sin(ang)*rad;
-      k?x.lineTo(px,py):x.moveTo(px,py);
-    });
-    x.stroke();plotted++;
+      return[cx+Math.cos(ang)*rad,cy+Math.sin(ang)*rad];};
+    // glowing trace
+    if(s.length>=2){
+      x.strokeStyle=col;x.lineWidth=2.6;
+      x.shadowColor=col;x.shadowBlur=6;x.beginPath();
+      s.forEach((p,k)=>{const q=pt(p);k?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]);});
+      x.stroke();x.shadowBlur=0;
+    }
+    // dot at the latest sample
+    const last=pt(s[s.length-1]);
+    x.fillStyle=col;x.shadowColor=col;x.shadowBlur=8;
+    x.beginPath();x.arc(last[0],last[1],3.4,0,7);x.fill();x.shadowBlur=0;
+    const tag=(LIVE&&LIVE.ch[i])?LIVE.ch[i].tag:"";
+    leg.push(`<span><i style="background:${col}"></i>CH${i+1} ${tag}</span>`);
   });
-  // legend / stats
-  if(sel<0){
-    $("polar-stats").innerHTML=`<span>${plotted} channel(s) plotted, `+
-      `each normalized to its lo/hi range.</span>`;
-  }else{
-    const tag=(LIVE&&LIVE.ch[sel])?LIVE.ch[sel].tag:"";
-    $("polar-stats").innerHTML=`<span>CH${sel+1} <b>${tag}</b> `+
-      `normalized to lo/hi range.</span>`;
-  }
+  $("polar-stats").innerHTML=leg.length
+    ?`<div class="pleg">${leg.join("")}</div>`
+    :`<span style="color:var(--mut)">No valid samples yet today.</span>`;
 }
 
 /* ============================================================
