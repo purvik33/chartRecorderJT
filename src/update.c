@@ -63,6 +63,59 @@ static long ver_num(const char *s)
     return (long)a * 1000000L + b * 1000L + c;
 }
 
+/* ---- input hardening for shell command construction ----------------
+ * update_repo comes from recorder.ini and latest_tag / asset_url come
+ * straight out of the GitHub JSON response; all three end up on a curl
+ * command line handed to system()/popen(), so each is validated before
+ * use to stop shell-metacharacter injection. */
+
+/* strict version tag: optional v/V then 1-4 dot-separated decimal
+ * groups, e.g. "v1.2.3" (matches ^v?[0-9]+(\.[0-9]+){0,3}$) */
+static int valid_tag(const char *s)
+{
+    if (!s || !*s) return 0;
+    if (*s == 'v' || *s == 'V') s++;
+    int groups = 1, digits = 0;
+    for (; *s; s++) {
+        if (*s >= '0' && *s <= '9') { digits++; continue; }
+        if (*s == '.') {
+            if (digits == 0 || ++groups > 4) return 0;
+            digits = 0;
+            continue;
+        }
+        return 0;
+    }
+    return digits > 0;
+}
+
+/* owner/repo: letters, digits, - _ . and exactly one '/' separator */
+static int valid_repo(const char *s)
+{
+    if (!s || !*s) return 0;
+    int slashes = 0;
+    for (; *s; s++) {
+        char c = *s;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.')
+            continue;
+        if (c == '/') { if (++slashes > 1) return 0; continue; }
+        return 0;
+    }
+    return slashes == 1;
+}
+
+/* asset_url is double-quoted in the command; reject controls, spaces and
+ * the metacharacters that could break out of the quotes or the shell */
+static int url_safe(const char *s)
+{
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c < 0x20 || c == 0x7f) return 0;
+        if (strchr("\"'`$\\ ;|&<>(){}*?", c)) return 0;
+    }
+    return 1;
+}
+
 static void auth_arg(char *buf, int n)
 {
     if (g_cfg.update_token[0])
@@ -110,6 +163,12 @@ static void *check_thread(void *a)
     char auth[120], cmd[360];
     static char body[32768];
 
+    if (!valid_repo(g_cfg.update_repo)) {
+        set_msg("Update repo '%s' has invalid characters", g_cfg.update_repo);
+        st = UPD_ERROR;
+        return NULL;
+    }
+
     auth_arg(auth, sizeof(auth));
     snprintf(cmd, sizeof(cmd),
              "curl -sL -m 15 %s"
@@ -136,6 +195,14 @@ static void *check_thread(void *a)
     }
     latest_tag[i] = 0;
 
+    /* the tag is used to build a download URL later; reject anything
+     * that isn't a plain version so it can't smuggle shell text */
+    if (!valid_tag(latest_tag)) {
+        set_msg("Release tag '%s' is not a valid version", latest_tag);
+        st = UPD_ERROR;
+        return NULL;
+    }
+
     find_asset_url(body);
 
     long remote = ver_num(latest_tag), local = ver_num(FW_VERSION);
@@ -158,6 +225,16 @@ static void *apply_thread(void *a)
 {
     (void)a;
     char auth[120], cmd[500], self[512];
+
+    /* re-validate every externally-sourced field that feeds system():
+     * repo/tag were checked in check_thread, asset_url comes from the
+     * release JSON and is checked here before it hits the shell */
+    if (!valid_repo(g_cfg.update_repo) || !valid_tag(latest_tag) ||
+        (asset_url[0] && !url_safe(asset_url))) {
+        set_msg("Update aborted - unsafe repo/tag/asset value");
+        st = UPD_ERROR;
+        return NULL;
+    }
 
     auth_arg(auth, sizeof(auth));
     if (asset_url[0])

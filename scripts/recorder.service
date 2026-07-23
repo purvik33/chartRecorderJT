@@ -1,10 +1,11 @@
 [Unit]
-Description=Paperless recorder UI
+Description=Paperless recorder UI (kiosk)
 After=systemd-user-sessions.service
 
 [Service]
 Type=simple
-ExecStart=/opt/recorder/recorder_ui /dev/dri/card1 /dev/input/event0
+WorkingDirectory=/home/rishi/recorder/build
+ExecStart=/home/rishi/recorder/build/recorder_ui /dev/dri/by-path/platform-gpu-card /dev/input/by-id/usb-Weida_Hi-Tech_CoolTouchR_System-event-if00
 Restart=always
 RestartSec=2
 User=root

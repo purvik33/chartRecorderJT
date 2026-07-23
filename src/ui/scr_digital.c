@@ -125,6 +125,9 @@ static void pop_close_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
     if (pop) {
+        /* delete the refresh timer too - otherwise it outlives the
+         * popup and, if reopened, a duplicate timer runs alongside it */
+        if (pop_timer) { lv_timer_delete(pop_timer); pop_timer = NULL; }
         lv_obj_delete(pop);
         pop = NULL;
         pop_ch = -1;
@@ -296,7 +299,13 @@ void scr_digital_refresh(void)
     for (int i = 0; i < CH_PER_GROUP; i++) {
         tile_t *t = &tiles[i];
         if (!lv_obj_is_valid(t->tile)) { built = false; return; }
-        channel_t *c = &g_ch[base + i];
+        /* snapshot the channel under the lock; the acquisition thread
+         * writes g_ch concurrently. Copy, unlock, then do LVGL work. */
+        channel_t snap;
+        data_lock();
+        snap = g_ch[base + i];
+        data_unlock();
+        channel_t *c = &snap;
 
         lv_label_set_text_fmt(t->lbl_tag, "CH%d  %s", base + i + 1, c->tag);
         lv_label_set_text_fmt(t->lbl_sp_l, "L: %g", (double)c->alm_lo);

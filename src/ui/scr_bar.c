@@ -77,7 +77,13 @@ void scr_bar_refresh(void)
     for (int i = 0; i < CH_PER_GROUP; i++) {
         bar_row_t *r = &rows[i];
         if (!lv_obj_is_valid(r->row)) { built = false; return; }
-        channel_t *c = &g_ch[base + i];
+        /* snapshot the channel under the lock; the acquisition thread
+         * writes g_ch concurrently. Copy, unlock, then do LVGL work. */
+        channel_t snap;
+        data_lock();
+        snap = g_ch[base + i];
+        data_unlock();
+        channel_t *c = &snap;
 
         lv_label_set_text_fmt(r->lbl_tag, "CH%d %s", base + i + 1, c->tag);
         lv_label_set_text_fmt(r->lbl_lo, "%g", (double)c->lo);

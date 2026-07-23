@@ -55,7 +55,7 @@ add_executable(recorder_ui
 )
 target_include_directories(recorder_ui PRIVATE src)
 find_package(Threads REQUIRED)
-target_link_libraries(recorder_ui PRIVATE lvgl Threads::Threads)
+target_link_libraries(recorder_ui PRIVATE lvgl Threads::Threads m)
 if(WIN32)
     target_link_libraries(recorder_ui PRIVATE ws2_32)
 endif()

@@ -35,6 +35,8 @@ typedef int wsock_t;
 static void web_msleep(int ms) { usleep(ms * 1000); }
 #endif
 
+int ui_group(void);   /* current display group (0-based), from ui.c */
+
 static volatile int served;
 int webserver_clients(void) { return served; }
 
@@ -118,6 +120,8 @@ static const char DASH_HTML[] =
 "font-variant-numeric:tabular-nums}"
 "#bs{color:var(--mut);font-size:13px;margin-top:10px;"
 "font-variant-numeric:tabular-nums}"
+"#ver{position:fixed;right:14px;bottom:10px;color:var(--mut);"
+"font-size:12px;font-variant-numeric:tabular-nums;letter-spacing:.5px}"
 "</style></head><body><div id='wrap'>"
 "<header><h1>JETPACE <span>PR-40 Recorder</span></h1>"
 "<div id='clk'>connecting...</div></header>"
@@ -128,8 +132,8 @@ static const char DASH_HTML[] =
 "<div class='n' id='t_alm'>-</div></div>"
 "<div class='tile'><div class='k'>Channels healthy</div>"
 "<div class='n' id='t_ok'>-</div></div>"
-"<div class='tile'><div class='k'>Firmware</div>"
-"<div class='n' id='t_fw'>-</div></div>"
+"<div class='tile'><div class='k'>Group</div>"
+"<div class='n' id='t_grp'>-</div></div>"
 "</div>"
 "<h2>Channels &mdash; tap a card for today's trend</h2>"
 "<div id='grid'></div>"
@@ -138,6 +142,7 @@ static const char DASH_HTML[] =
 "<span id='bx'>Close</span></div>"
 "<div id='cvw'><canvas id='cv'></canvas><div id='tip'></div></div>"
 "<div id='bs'></div></div></div>"
+"<div id='ver'>v0.2.0</div>"
 "</div><script>\n"
 "const $=id=>document.getElementById(id);const grid=$('grid');"
 "let cards=[],P=[],pu='',pl=0,ph=1;\n"
@@ -149,7 +154,8 @@ static const char DASH_HTML[] =
 "d.onclick=()=>trend(i);grid.appendChild(d);cards.push(d);}}\n"
 "async function live(){try{const r=await fetch('/api/live'),"
 "j=await r.json();if(!cards.length)mk(j.ch.length);\n"
-"$('clk').textContent=j.time;$('t_fw').textContent=j.fw;"
+"$('clk').textContent=j.time;$('t_grp').textContent='Group '+j.grp;"
+"$('ver').textContent='v'+j.fw;"
 "$('t_alm').textContent=j.alarms;"
 "$('t_alm').style.color=j.alarms?'var(--alm)':'var(--ink)';"
 "$('t_link').innerHTML=`<span class='dot ${j.link?'ok':'no'}'></span>"
@@ -344,9 +350,9 @@ static void api_live(wsock_t s)
     time_t now = time(NULL);
     struct tm tm = *localtime(&now);
     o += snprintf(body + o, sizeof(body) - (size_t)o,
-                  "{\"fw\":\"" FW_VERSION "\",\"link\":%d,"
+                  "{\"fw\":\"" FW_VERSION "\",\"grp\":%d,\"link\":%d,"
                   "\"alarms\":%d,\"time\":\"%02d:%02d:%02d\",\"ch\":[",
-                  comm_link_ok(), alarm_active_count(),
+                  ui_group() + 1, comm_link_ok(), alarm_active_count(),
                   tm.tm_hour, tm.tm_min, tm.tm_sec);
 
     int nch = g_cfg.cards * CH_PER_GROUP;
@@ -435,6 +441,28 @@ static void api_log(wsock_t s, const char *name)
 
 /* ---- server thread ----------------------------------------------------- */
 
+/* Serve dashboard.html from disk if present (edit-and-refresh, no rebuild),
+ * otherwise the compiled-in fallback page. cwd is the exe dir (build/). */
+static void serve_dashboard(wsock_t s)
+{
+    FILE *f = fopen("dashboard.html", "rb");
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char *buf = (sz > 0) ? (char *)malloc((size_t)sz) : NULL;
+        if (buf && fread(buf, 1, (size_t)sz, f) == (size_t)sz) {
+            http_send(s, "200 OK", "text/html", buf, (size_t)sz);
+            free(buf);
+            fclose(f);
+            return;
+        }
+        free(buf);
+        fclose(f);
+    }
+    http_send(s, "200 OK", "text/html", DASH_HTML, sizeof(DASH_HTML) - 1);
+}
+
 static void handle_client(wsock_t c)
 {
     set_timeouts(c);
@@ -456,8 +484,7 @@ static void handle_client(wsock_t c)
     }
 
     if (!strcmp(path, "/") || !strcmp(path, "/index.html"))
-        http_send(c, "200 OK", "text/html", DASH_HTML,
-                  sizeof(DASH_HTML) - 1);
+        serve_dashboard(c);
     else if (!strcmp(path, "/api/live"))
         api_live(c);
     else if (!strcmp(path, "/api/days"))

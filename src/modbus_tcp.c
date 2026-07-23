@@ -27,6 +27,8 @@ static int  sock_init(void)
 #else
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
@@ -193,7 +195,10 @@ static int process_pdu(int unit, const uint8_t *pdu, int plen, uint8_t *rsp)
     uint8_t fc = pdu[0];
 
     /* ---- gateway: forward to an AI card over RS-485 ---- */
-    if (unit >= GW_UNIT_BASE && unit < GW_UNIT_BASE + g_cfg.cards) {
+    /* the configured local unit always serves the recorder's own map,
+     * even when tcp_unit falls inside the gateway range 11..15 */
+    if (unit != g_cfg.tcp_unit &&
+        unit >= GW_UNIT_BASE && unit < GW_UNIT_BASE + g_cfg.cards) {
         int slave = g_cfg.slave_base + (unit - GW_UNIT_BASE);
         if ((fc == 3 || fc == 4) && plen >= 5) {
             int addr = pdu[1] << 8 | pdu[2];
@@ -431,15 +436,69 @@ void net_current_ip(char *buf, int n)
     sock_close(s);
 }
 
+#if !defined(_WIN32) && defined(RECORDER_PI)
+/* Run argv (NUL-terminated) directly via fork()+execvp()+waitpid() with
+ * NO shell in between, so config values passed as separate argv elements
+ * can never be interpreted as shell syntax. Runs synchronously and
+ * returns the child's exit status (0 = success), or -1 on spawn failure. */
+static int run_argv(char *const argv[])
+{
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        execvp(argv[0], argv);
+        _exit(127);                    /* execvp failed */
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) return -1;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return -1;
+}
+
+/* Resolve the NetworkManager connection currently bound to `dev`
+ * (e.g. "eth0") into `out`. Returns 0 on success, -1 if none is found.
+ * The command is fixed with no user input, so popen() is safe here. */
+static int nm_conn_for_dev(const char *dev, char *out, size_t outsz)
+{
+    FILE *p = popen("nmcli -t -f DEVICE,CONNECTION dev status 2>/dev/null",
+                    "r");
+    if (!p) return -1;
+    char line[256];
+    int found = -1;
+    size_t dl = strlen(dev);
+    while (fgets(line, sizeof(line), p)) {
+        /* format: DEVICE:CONNECTION */
+        if (strncmp(line, dev, dl) == 0 && line[dl] == ':') {
+            char *conn = line + dl + 1;
+            conn[strcspn(conn, "\r\n")] = 0;
+            if (conn[0] && strcmp(conn, "--") != 0) {
+                snprintf(out, outsz, "%s", conn);
+                found = 0;
+            }
+            break;
+        }
+    }
+    pclose(p);
+    return found;
+}
+#endif
+
 void net_apply(void)
 {
 #if !defined(_WIN32) && defined(RECORDER_PI)
-    /* Raspberry Pi OS (bookworm) uses NetworkManager */
-    char cmd[512];
+    /* Raspberry Pi OS (bookworm) uses NetworkManager. Resolve the eth0
+     * connection at runtime instead of assuming "Wired connection 1";
+     * on netplan-managed Pis it is named e.g. "netplan-eth0". */
+    char conn[128];
+    if (nm_conn_for_dev("eth0", conn, sizeof(conn)) != 0) {
+        event_log("CONFIG", "Network apply FAILED: no connection for eth0");
+        return;
+    }
+    int rc;
     if (g_cfg.net_dhcp) {
-        snprintf(cmd, sizeof(cmd),
-                 "nmcli con mod \"Wired connection 1\" ipv4.method auto "
-                 "&& nmcli con up \"Wired connection 1\" &");
+        char *mod[] = { "nmcli", "con", "mod", conn,
+                        "ipv4.method", "auto", NULL };
+        rc = run_argv(mod);
     } else {
         /* mask string -> prefix length */
         unsigned m[4] = { 0, 0, 0, 0 };
@@ -447,14 +506,21 @@ void net_apply(void)
         uint32_t mm = m[0] << 24 | m[1] << 16 | m[2] << 8 | m[3];
         int prefix = 0;
         while (mm & 0x80000000u) { prefix++; mm <<= 1; }
-        snprintf(cmd, sizeof(cmd),
-                 "nmcli con mod \"Wired connection 1\" ipv4.method manual "
-                 "ipv4.addresses %s/%d ipv4.gateway %s ipv4.dns %s "
-                 "&& nmcli con up \"Wired connection 1\" &",
-                 g_cfg.net_ip, prefix, g_cfg.net_gw, g_cfg.net_dns);
+        char addr[32];
+        snprintf(addr, sizeof(addr), "%s/%d", g_cfg.net_ip, prefix);
+        char *mod[] = { "nmcli", "con", "mod", conn,
+                        "ipv4.method", "manual",
+                        "ipv4.addresses", addr,
+                        "ipv4.gateway", g_cfg.net_gw,
+                        "ipv4.dns", g_cfg.net_dns, NULL };
+        rc = run_argv(mod);
     }
-    if (system(cmd) != 0) { /* logged below either way */ }
-    event_log("CONFIG", "Network settings applied (%s)",
+    if (rc == 0) {
+        char *up[] = { "nmcli", "con", "up", conn, NULL };
+        rc = run_argv(up);
+    }
+    event_log("CONFIG", "Network settings %s (%s)",
+              rc == 0 ? "applied" : "apply FAILED",
               g_cfg.net_dhcp ? "DHCP" : g_cfg.net_ip);
 #else
     /* simulator: settings are stored and take effect on the recorder */
@@ -510,33 +576,46 @@ int wifi_scan(char (*out)[33], int max)
 void wifi_apply(void)
 {
 #if !defined(_WIN32) && defined(RECORDER_PI)
-    char cmd[600];
+    int rc = 0;
     if (!g_cfg.wifi_enable) {
-        snprintf(cmd, sizeof(cmd), "nmcli radio wifi off &");
-    } else if (g_cfg.wifi_dhcp) {
-        snprintf(cmd, sizeof(cmd),
-                 "nmcli radio wifi on && "
-                 "nmcli dev wifi connect \"%s\" password \"%s\" &",
-                 g_cfg.wifi_ssid, g_cfg.wifi_pass);
+        char *off[] = { "nmcli", "radio", "wifi", "off", NULL };
+        rc = run_argv(off);
     } else {
-        unsigned m[4] = { 0, 0, 0, 0 };
-        sscanf(g_cfg.wifi_mask, "%u.%u.%u.%u", &m[0], &m[1], &m[2], &m[3]);
-        uint32_t mm = m[0] << 24 | m[1] << 16 | m[2] << 8 | m[3];
-        int prefix = 0;
-        while (mm & 0x80000000u) { prefix++; mm <<= 1; }
-        snprintf(cmd, sizeof(cmd),
-                 "nmcli radio wifi on && "
-                 "nmcli dev wifi connect \"%s\" password \"%s\" && "
-                 "nmcli con mod \"%s\" ipv4.method manual "
-                 "ipv4.addresses %s/%d ipv4.gateway %s && "
-                 "nmcli con up \"%s\" &",
-                 g_cfg.wifi_ssid, g_cfg.wifi_pass, g_cfg.wifi_ssid,
-                 g_cfg.wifi_ip, prefix, g_cfg.wifi_gw, g_cfg.wifi_ssid);
+        char *on[] = { "nmcli", "radio", "wifi", "on", NULL };
+        rc = run_argv(on);
+        if (rc == 0) {
+            /* `nmcli dev wifi connect` names the resulting profile after
+             * the SSID; SSID/password are passed as separate argv elements
+             * so they are never parsed as shell syntax */
+            char *conn[] = { "nmcli", "dev", "wifi", "connect",
+                             g_cfg.wifi_ssid, "password", g_cfg.wifi_pass,
+                             NULL };
+            rc = run_argv(conn);
+        }
+        if (rc == 0 && !g_cfg.wifi_dhcp) {
+            unsigned m[4] = { 0, 0, 0, 0 };
+            sscanf(g_cfg.wifi_mask, "%u.%u.%u.%u",
+                   &m[0], &m[1], &m[2], &m[3]);
+            uint32_t mm = m[0] << 24 | m[1] << 16 | m[2] << 8 | m[3];
+            int prefix = 0;
+            while (mm & 0x80000000u) { prefix++; mm <<= 1; }
+            char addr[32];
+            snprintf(addr, sizeof(addr), "%s/%d", g_cfg.wifi_ip, prefix);
+            char *mod[] = { "nmcli", "con", "mod", g_cfg.wifi_ssid,
+                            "ipv4.method", "manual",
+                            "ipv4.addresses", addr,
+                            "ipv4.gateway", g_cfg.wifi_gw, NULL };
+            rc = run_argv(mod);
+            if (rc == 0) {
+                char *up[] = { "nmcli", "con", "up", g_cfg.wifi_ssid, NULL };
+                rc = run_argv(up);
+            }
+        }
     }
-    if (system(cmd) != 0) { /* result visible in the event log status */ }
-    event_log("CONFIG", "Wi-Fi %s (%s)",
+    event_log("CONFIG", "Wi-Fi %s (%s)%s",
               g_cfg.wifi_enable ? "connecting" : "disabled",
-              g_cfg.wifi_enable ? g_cfg.wifi_ssid : "-");
+              g_cfg.wifi_enable ? g_cfg.wifi_ssid : "-",
+              rc == 0 ? "" : " - FAILED");
 #else
     event_log("CONFIG", "Wi-Fi settings saved (%s, %s)",
               g_cfg.wifi_enable ? "enabled" : "disabled",

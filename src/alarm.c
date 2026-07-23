@@ -8,31 +8,64 @@
 /* ---- persistent alarm event log: logs/alarms-YYYY-MM-DD.csv ----
  * One row per event action (SET / CLEAR / ACK), chronological, so the
  * full alarm history survives restarts and can be exported. */
-static const char *type_txt_log[] = { "HIGH", "LOW", "COMM" };
+static const char *type_txt_log[] = { "HIGH", "LOW", "COMM", "OPEN" };
 
-static void alarm_log_row(const alarm_evt_t *e, const char *action)
+/* a formatted-but-not-yet-written log row: capture the target file and
+ * the exact CSV line while under the data lock, flush to disk later */
+typedef struct {
+    char path[64];
+    char line[200];
+} alarm_row_t;
+
+/* format the row (reads g_ch/e - must run while holding the data lock) */
+static void alarm_fmt_row(alarm_row_t *row, const alarm_evt_t *e,
+                          const char *action)
 {
     time_t now = time(NULL);
     struct tm tm = *localtime(&now);
 
-    char path[64];
-    snprintf(path, sizeof(path), "logs/alarms-%04d-%02d-%02d.csv",
+    snprintf(row->path, sizeof(row->path), "logs/alarms-%04d-%02d-%02d.csv",
              tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+    snprintf(row->line, sizeof(row->line),
+             "%04d-%02d-%02d %02d:%02d:%02d,CH%d,%s,%s,%s,%.3f\n",
+             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+             tm.tm_hour, tm.tm_min, tm.tm_sec,
+             e->ch + 1, g_ch[e->ch].tag,
+             type_txt_log[e->type], action, (double)e->value);
+}
 
-    FILE *chk = fopen(path, "r");
+/* write a pre-formatted row to disk (no data lock needed / must not hold
+ * it - blocking SD-card I/O) */
+static void alarm_write_row(const alarm_row_t *row)
+{
+    FILE *chk = fopen(row->path, "r");
     int new_file = (chk == NULL);
     if (chk) fclose(chk);
 
-    FILE *f = fopen(path, "a");
+    FILE *f = fopen(row->path, "a");
     if (!f) return;
     if (new_file)
         fprintf(f, "timestamp,channel,tag,type,event,value\n");
-    fprintf(f, "%04d-%02d-%02d %02d:%02d:%02d,CH%d,%s,%s,%s,%.3f\n",
-            tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-            tm.tm_hour, tm.tm_min, tm.tm_sec,
-            e->ch + 1, g_ch[e->ch].tag,
-            type_txt_log[e->type], action, (double)e->value);
+    fputs(row->line, f);
     fclose(f);
+}
+
+static void alarm_log_row(const alarm_evt_t *e, const char *action)
+{
+    alarm_row_t row;
+    alarm_fmt_row(&row, e, action);
+    alarm_write_row(&row);
+}
+
+/* rows produced during one locked alarm_eval() pass, flushed after unlock.
+ * Worst case is a close + a re-open per channel. */
+static alarm_row_t pend_rows[2 * CH_TOTAL];
+static int         pend_n;
+
+static void alarm_stage_row(const alarm_evt_t *e, const char *action)
+{
+    if (pend_n < (int)(sizeof(pend_rows) / sizeof(pend_rows[0])))
+        alarm_fmt_row(&pend_rows[pend_n++], e, action);
 }
 
 /* ring buffer of events, newest at (head-1) */
@@ -63,7 +96,7 @@ static void push_event(int ch, alarm_type_t type, float value)
     head = (head + 1) % ALARM_HIST;
     if (count < ALARM_HIST) count++;
 
-    alarm_log_row(e, "SET");
+    alarm_stage_row(e, "SET");
 }
 
 static void close_event(int ch)
@@ -73,13 +106,14 @@ static void close_event(int ch)
         e->t_clear = time(NULL);
         if (e->acked) e->deleted = 1;   /* acked + cleared: drop it */
         open_evt[ch] = -1;
-        alarm_log_row(e, "CLEAR");
+        alarm_stage_row(e, "CLEAR");
     }
 }
 
 void alarm_eval(void)
 {
     data_lock();
+    pend_n = 0;
     if (!inited) {
         for (int i = 0; i < CH_TOTAL; i++) open_evt[i] = -1;
         inited = 1;
@@ -125,6 +159,11 @@ void alarm_eval(void)
         }
     }
     data_unlock();
+
+    /* flush the captured rows to disk now the data lock is released, so
+     * blocking SD-card I/O never stalls the acquisition thread / UI */
+    for (int i = 0; i < pend_n; i++)
+        alarm_write_row(&pend_rows[i]);
 }
 
 int alarm_active_count(void)

@@ -92,7 +92,8 @@ void history_overlay_live(trend_day_t *out, time_t day_start, int group)
     memset(cnt, 0, sizeof(cnt));
 
     time_t now = time(NULL);
-    data_lock();
+    /* NB: data_live_get() takes data_lock() itself; holding it here too
+     * would self-deadlock the non-recursive mutex and hang Polar. */
     for (time_t t = now - LIVE_SECS + 1; t <= now; t++) {
         if (t < day_start || t >= day_start + 86400) continue;
         int b = (int)((t - day_start) / TREND_BUCKET_SEC);
@@ -105,7 +106,6 @@ void history_overlay_live(trend_day_t *out, time_t day_start, int group)
             }
         }
     }
-    data_unlock();
 
     for (int c = 0; c < CH_PER_GROUP; c++)
         for (int b = 0; b < TREND_BUCKETS; b++)

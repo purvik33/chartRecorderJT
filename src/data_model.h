@@ -6,6 +6,7 @@
 #define DATA_MODEL_H
 
 #include <stdint.h>
+#include <time.h>
 
 #define CH_TOTAL      40   /* 5 cards x 8 channels */
 #define CH_PER_GROUP  8

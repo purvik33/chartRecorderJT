@@ -3,10 +3,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#ifndef _WIN32
+#include <sys/stat.h>   /* chmod() - POSIX only */
+#endif
 
 #define INI_PATH "recorder.ini"
 
 app_cfg_t g_cfg;
+
+/* serialises the whole of config_save() so the TCP thread and the UI
+ * thread cannot interleave writes to recorder.ini */
+static pthread_mutex_t cfg_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 static void set_defaults(void)
 {
@@ -138,6 +146,25 @@ void config_load(void)
     }
     fclose(f);
 
+    /* Validate / clamp everything that could index arrays or drive I/O
+     * later. A bad recorder.ini (hand-edited or corrupt) must never be
+     * able to push us out of bounds - clamp defensively, don't crash.
+     * cards is the critical one: the poll loop indexes g_ch[card*8+c]
+     * against CH_TOTAL (40), so cards must stay in 1..5. */
+    if (g_cfg.cards < 1) g_cfg.cards = 1;
+    if (g_cfg.cards > GROUP_COUNT) g_cfg.cards = GROUP_COUNT;
+
+    if (g_cfg.slave_base < 1) g_cfg.slave_base = 1;
+
+    if (g_cfg.func != 3 && g_cfg.func != 4) g_cfg.func = 4;
+
+    if (g_cfg.fmt < FMT_FLOAT || g_cfg.fmt > FMT_I16_RAW) g_cfg.fmt = FMT_I16_10;
+
+    if (g_cfg.word_order != 0 && g_cfg.word_order != 1) g_cfg.word_order = 0;
+
+    if (g_cfg.tcp_port < 1 || g_cfg.tcp_port > 65535) g_cfg.tcp_port = 502;
+    if (g_cfg.web_port < 1 || g_cfg.web_port > 65535) g_cfg.web_port = 8080;
+
     /* minimum store interval is 1 minute (older configs may be lower) */
     if (g_cfg.store_interval < 60) g_cfg.store_interval = 60;
 
@@ -153,8 +180,12 @@ void config_load(void)
 
 void config_save(void)
 {
+    /* one writer at a time - two concurrent savers would interleave
+     * fprintf output and corrupt recorder.ini */
+    pthread_mutex_lock(&cfg_mtx);
+
     FILE *f = fopen(INI_PATH, "w");
-    if (!f) return;
+    if (!f) { pthread_mutex_unlock(&cfg_mtx); return; }
 
     fprintf(f, "[comm]\n");
     fprintf(f, "source=%d\n",     g_cfg.source);
@@ -208,6 +239,9 @@ void config_save(void)
     for (int i = 0; i < 40; i++)
         fprintf(f, "ch_color%d=%d\n", i, g_cfg.ch_color[i]);
 
+    /* g_ch[] is shared with the comm/UI threads - read it under the
+     * data lock so a concurrent update can't be captured mid-write */
+    data_lock();
     for (int i = 0; i < CH_TOTAL; i++) {
         channel_t *c = &g_ch[i];
         fprintf(f, "\n[ch%d]\n", i + 1);
@@ -215,5 +249,15 @@ void config_save(void)
                 c->tag, c->unit, (double)c->lo, (double)c->hi,
                 (double)c->alm_hi, (double)c->alm_lo);
     }
+    data_unlock();
+
     fclose(f);
+
+    /* recorder.ini holds wifi_pass, PINs and the OTA token - keep it
+     * readable by the owner only (POSIX; no-op on the Windows sim) */
+#ifndef _WIN32
+    chmod(INI_PATH, 0600);
+#endif
+
+    pthread_mutex_unlock(&cfg_mtx);
 }

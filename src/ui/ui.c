@@ -5,6 +5,7 @@
 #include "comm.h"
 #include "config.h"
 #include "users.h"
+#include "export.h"
 #include <stdio.h>
 #include <time.h>
 #include <math.h>
@@ -12,6 +13,9 @@
 static lv_obj_t *content;
 static lv_obj_t *lbl_group;
 static lv_obj_t *lbl_clock;
+static lv_obj_t *lbl_wifi;
+static lv_obj_t *lbl_usb;
+static lv_obj_t *eth_ic;
 static lv_obj_t *nav_btns[VIEW_COUNT];
 static view_id_t cur_view = VIEW_DIGITAL;
 static int cur_group = 0;
@@ -175,7 +179,7 @@ static void group_cb(lv_event_t *e)
 }
 
 static lv_obj_t *lbl_alarm;
-static lv_obj_t *lbl_link;
+static lv_obj_t *rs_ic;      /* RS-485 bus link icon (multidrop) */
 
 static void splash_timer_cb(lv_timer_t *t)
 {
@@ -423,6 +427,57 @@ static void splash_scene(lv_obj_t *splash)
     }
 }
 
+#ifdef RECORDER_PI
+/* WiFi signal from /proc/net/wireless: link quality (0..~70) -> 0..4 bars */
+static int wifi_level(void)
+{
+    FILE *f = fopen("/proc/net/wireless", "r");
+    if (!f) return -1;
+    char line[160];
+    int bars = -1;
+    while (fgets(line, sizeof(line), f)) {
+        char iface[32]; unsigned status; float link = 0, level = 0;
+        if (sscanf(line, " %31[^:]: %x %f %f", iface, &status, &link, &level) >= 4) {
+            int q = (int)link;
+            bars = q >= 56 ? 4 : q >= 42 ? 3 : q >= 28 ? 2 : q >= 1 ? 1 : 0;
+            break;
+        }
+    }
+    fclose(f);
+    return bars;
+}
+#else
+static int wifi_level(void) { return 4; }   /* PC sim: full WiFi */
+#endif
+
+/* WiFi arcs glyph: brand colour + opacity rising with signal; grey when down */
+static void wifi_icon_update(void)
+{
+    int lvl = wifi_level();          /* -1 = no wifi, 0..4 = signal */
+    if (lvl < 0) {
+        lv_obj_set_style_text_color(lbl_wifi, COL_MUTED, 0);
+        lv_obj_set_style_text_opa(lbl_wifi, LV_OPA_40, 0);
+    } else {
+        lv_obj_set_style_text_color(lbl_wifi, COL_ACCENT, 0);
+        lv_obj_set_style_text_opa(lbl_wifi,
+            lvl >= 3 ? LV_OPA_COVER : lvl == 2 ? LV_OPA_70 : LV_OPA_40, 0);
+    }
+}
+
+#ifdef RECORDER_PI
+static int eth_present(void)      /* 1 = eth0 cable has link */
+{
+    FILE *f = fopen("/sys/class/net/eth0/carrier", "r");
+    if (!f) return 0;
+    int c = 0;
+    if (fscanf(f, "%d", &c) != 1) c = 0;
+    fclose(f);
+    return c == 1;
+}
+#else
+static int eth_present(void) { return 0; }
+#endif
+
 static void refresh_timer_cb(lv_timer_t *t)
 {
     LV_UNUSED(t);
@@ -443,14 +498,23 @@ static void refresh_timer_cb(lv_timer_t *t)
         lv_obj_set_style_text_color(lbl_alarm, COL_MUTED, 0);
     }
 
-    if (g_cfg.source == SRC_MODBUS) {
-        lv_label_set_text(lbl_link, comm_link_ok() ? "RS485" : "NO LINK");
-        lv_obj_set_style_text_color(lbl_link,
-            comm_link_ok() ? COL_ACCENT : COL_ALARM_TXT, 0);
-    } else {
-        lv_label_set_text(lbl_link, "SIM");
-        lv_obj_set_style_text_color(lbl_link, COL_MUTED, 0);
+    {
+        lv_color_t lc = (g_cfg.source == SRC_MODBUS)
+            ? (comm_link_ok() ? COL_ACCENT : COL_ALARM_TXT)
+            : COL_MUTED;
+        uint32_t cc = lv_obj_get_child_count(rs_ic);
+        for (uint32_t k = 0; k < cc; k++)
+            lv_obj_set_style_bg_color(lv_obj_get_child(rs_ic, k), lc, 0);
     }
+
+    wifi_icon_update();
+
+    { char u[128];
+      if (usb_find(u, sizeof u)) lv_obj_remove_flag(lbl_usb, LV_OBJ_FLAG_HIDDEN);
+      else                       lv_obj_add_flag(lbl_usb, LV_OBJ_FLAG_HIDDEN); }
+
+    if (eth_present()) lv_obj_remove_flag(eth_ic, LV_OBJ_FLAG_HIDDEN);
+    else               lv_obj_add_flag(eth_ic, LV_OBJ_FLAG_HIDDEN);
 
     switch (cur_view) {
     case VIEW_DIGITAL: scr_digital_refresh(); break;
@@ -536,16 +600,71 @@ static void build_root(void)
     lv_obj_set_style_text_color(lbl_clock, COL_MUTED, 0);
     lv_obj_align(lbl_clock, LV_ALIGN_RIGHT_MID, -12, 0);
 
-    lbl_link = lv_label_create(bar);
-    lv_label_set_text(lbl_link, "SIM");
-    lv_obj_set_style_text_color(lbl_link, COL_MUTED, 0);
-    lv_obj_set_style_text_font(lbl_link, &font_units_12, 0);
-    lv_obj_align(lbl_link, LV_ALIGN_RIGHT_MID, -170, 0);
+    /* RS-485 bus link icon: a multidrop trunk with three nodes */
+    rs_ic = lv_obj_create(bar);
+    lv_obj_remove_style_all(rs_ic);
+    lv_obj_set_size(rs_ic, 22, 14);
+    lv_obj_remove_flag(rs_ic, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(rs_ic, LV_ALIGN_RIGHT_MID, -166, 0);
+    {
+        lv_obj_t *e;
+        e = lv_obj_create(rs_ic); lv_obj_remove_style_all(e);   /* trunk */
+        lv_obj_set_size(e, 20, 2); lv_obj_set_pos(e, 1, 6);
+        lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(e, COL_MUTED, 0);
+        int nx[3] = { 0, 9, 18 };                               /* nodes */
+        for (int k = 0; k < 3; k++) {
+            e = lv_obj_create(rs_ic); lv_obj_remove_style_all(e);
+            lv_obj_set_size(e, 4, 4); lv_obj_set_pos(e, nx[k], 5);
+            lv_obj_set_style_radius(e, 1, 0);
+            lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_color(e, COL_MUTED, 0);
+        }
+    }
 
     lbl_alarm = lv_label_create(bar);
     lv_label_set_text(lbl_alarm, LV_SYMBOL_BELL);
     lv_obj_set_style_text_color(lbl_alarm, COL_MUTED, 0);
     lv_obj_align(lbl_alarm, LV_ALIGN_RIGHT_MID, -230, 0);
+
+    /* WiFi logo (arcs), just left of the alarm bell */
+    lbl_wifi = lv_label_create(bar);
+    lv_label_set_text(lbl_wifi, LV_SYMBOL_WIFI);
+    lv_obj_set_style_text_color(lbl_wifi, COL_MUTED, 0);
+    lv_obj_align_to(lbl_wifi, lbl_alarm, LV_ALIGN_OUT_LEFT_MID, -14, 0);
+
+    /* USB drive icon, left of WiFi; shown only when a stick is mounted */
+    lbl_usb = lv_label_create(bar);
+    lv_label_set_text(lbl_usb, LV_SYMBOL_USB);
+    lv_obj_set_style_text_color(lbl_usb, COL_ACCENT, 0);
+    lv_obj_align_to(lbl_usb, lbl_wifi, LV_ALIGN_OUT_LEFT_MID, -12, 0);
+    lv_obj_add_flag(lbl_usb, LV_OBJ_FLAG_HIDDEN);
+
+    /* Ethernet (RJ45 plug) icon, left of USB; shown when eth0 has link */
+    eth_ic = lv_obj_create(bar);
+    lv_obj_remove_style_all(eth_ic);
+    lv_obj_set_size(eth_ic, 16, 14);
+    lv_obj_remove_flag(eth_ic, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align_to(eth_ic, lbl_usb, LV_ALIGN_OUT_LEFT_MID, -10, 0);
+    {
+        lv_obj_t *e;
+        e = lv_obj_create(eth_ic); lv_obj_remove_style_all(e);   /* body */
+        lv_obj_set_size(e, 12, 8); lv_obj_set_pos(e, 2, 3);
+        lv_obj_set_style_radius(e, 1, 0);
+        lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(e, COL_ACCENT, 0);
+        e = lv_obj_create(eth_ic); lv_obj_remove_style_all(e);   /* cable lead */
+        lv_obj_set_size(e, 4, 3); lv_obj_set_pos(e, 6, 0);
+        lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(e, COL_ACCENT, 0);
+        for (int i = 0; i < 3; i++) {                            /* contact pins */
+            e = lv_obj_create(eth_ic); lv_obj_remove_style_all(e);
+            lv_obj_set_size(e, 2, 2); lv_obj_set_pos(e, 3 + i * 4, 11);
+            lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_color(e, COL_ACCENT, 0);
+        }
+    }
+    lv_obj_add_flag(eth_ic, LV_OBJ_FLAG_HIDDEN);
 
     /* ---- content ------------------------------------------------------ */
     content = flat_container(scr);

@@ -50,9 +50,13 @@ int data_live_get(int ch, time_t t, float *v)
 {
     if (ch < 0 || ch >= CH_TOTAL) return 0;
     int s = (int)(t % LIVE_SECS);
-    if (lv_t[s] != t || !lv_ok[ch][s]) return 0;
-    *v = lv_val[ch][s];
-    return 1;
+    /* read under the same lock the writer (data_live_push) holds so the
+     * slot's timestamp/value/ok flags are observed consistently */
+    data_lock();
+    int ok = (lv_t[s] == t && lv_ok[ch][s]);
+    if (ok) *v = lv_val[ch][s];
+    data_unlock();
+    return ok;
 }
 
 typedef struct {

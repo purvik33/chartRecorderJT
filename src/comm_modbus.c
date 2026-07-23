@@ -71,12 +71,17 @@ static serial_t serial_open(const char *port, int baud)
     int fd = open(port, O_RDWR | O_NOCTTY);
     if (fd < 0) return SERIAL_BAD;
 
-    speed_t sp = B9600;
+    speed_t sp;
     switch (baud) {
+    case 9600:   sp = B9600;   break;
     case 19200:  sp = B19200;  break;
     case 38400:  sp = B38400;  break;
     case 57600:  sp = B57600;  break;
     case 115200: sp = B115200; break;
+    default:
+        sp = B9600;
+        event_log("COMM", "Unknown baud %d - falling back to 9600", baud);
+        break;
     }
     struct termios tio;
     tcgetattr(fd, &tio);
@@ -349,7 +354,14 @@ void *comm_modbus_thread(void *arg)
     (void)arg;
 
     while (1) {
-        if (bus == SERIAL_BAD) {
+        serial_t cur;
+        pthread_mutex_lock(&bus_mtx);
+        cur = bus;
+        pthread_mutex_unlock(&bus_mtx);
+
+        if (cur == SERIAL_BAD) {
+            /* open outside the lock - this may block for seconds and
+             * must not stall the locked service API / teardown */
             serial_t h = serial_open(g_cfg.port, g_cfg.baud);
             if (h == SERIAL_BAD) {
                 link_ok = 0;
@@ -361,10 +373,24 @@ void *comm_modbus_thread(void *arg)
                 msleep(2000);
                 continue;
             }
-            bus = h;
-            /* new connection: fetch each card's input types */
-            for (int card = 0; card < g_cfg.cards; card++)
-                comm_refresh_types(card);
+            /* publish the handle under the lock; if a baud change (or an
+             * earlier pass) already installed one, keep that and drop ours
+             * so the fd/handle isn't leaked and the read path can't race */
+            pthread_mutex_lock(&bus_mtx);
+            if (bus == SERIAL_BAD) {
+                bus = h;
+                h = SERIAL_BAD;
+            }
+            pthread_mutex_unlock(&bus_mtx);
+            if (h != SERIAL_BAD) {
+                serial_close(h);
+            } else {
+                /* new connection: fetch each card's input types
+                 * (comm_refresh_types locks bus_mtx itself, so it must
+                 * run without the lock held) */
+                for (int card = 0; card < g_cfg.cards; card++)
+                    comm_refresh_types(card);
+            }
         }
 
         int any_ok = 0;
@@ -406,6 +432,10 @@ void *comm_modbus_thread(void *arg)
             }
             data_unlock();
             if (ok) any_ok = 1;
+
+            /* pace one card poll per (1000/cards) ms so every card
+             * refreshes once each ~1 s (5 cards -> 200 ms apart) */
+            msleep(1000 / (g_cfg.cards > 0 ? g_cfg.cards : 1));
         }
 
         /* log link transitions to the event trail */
@@ -428,7 +458,7 @@ void *comm_modbus_thread(void *arg)
 
         alarm_eval();
         data_live_push();
-        msleep(500);
+        /* full sweep is already paced to ~1 s by the per-card gap above */
     }
     return NULL;
 }

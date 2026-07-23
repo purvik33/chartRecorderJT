@@ -147,6 +147,7 @@ static lv_obj_t *dd_cfg_card, *dd_cfgtype[8], *lbl_cfgval[8], *lbl_cfgres;
 static lv_obj_t *btn_cap_lo, *btn_cap_hi;
 static lv_obj_t *dd_caltype, *ta_clo, *ta_chi, *lbl_calstat, *lbl_calcount;
 static int cal_active;   /* a calibration session is running */
+static int cal_slave;    /* slave of the card being calibrated */
 static lv_obj_t *dd_rfc, *ta_raddr, *dd_rcnt, *lbl_rres;
 static lv_obj_t *ta_waddr, *ta_wval, *sw_arm, *lbl_wres;
 
@@ -626,7 +627,7 @@ static void build_channel_form(void)
     char topts[300];
     int tlen = 0;
     topts[0] = 0;
-    for (unsigned t = 1; t < 20; t++)
+    for (unsigned t = 1; t < 20 && tlen < (int)sizeof(topts) - 1; t++)
         tlen += snprintf(topts + tlen, sizeof(topts) - (size_t)tlen, "%s%s",
                          mb_type_name(t), t < 19 ? "\n" : "");
 
@@ -1776,7 +1777,7 @@ static void build_cardcfg_form(void)
     char topts[300];
     int tlen = 0;
     topts[0] = 0;
-    for (unsigned t = 0; t < 20; t++)
+    for (unsigned t = 0; t < 20 && tlen < (int)sizeof(topts) - 1; t++)
         tlen += snprintf(topts + tlen, sizeof(topts) - (size_t)tlen, "%s%s",
                          mb_type_name(t), t < 19 ? "\n" : "");
 
@@ -1837,7 +1838,10 @@ static void reg_read_cb(lv_event_t *e)
     }
     char buf[256];
     int len = 0;
-    for (int i = 0; i < n; i++)
+    buf[0] = 0;
+    /* clamp: snprintf returns the INTENDED length, so len can run past
+     * the buffer; stop before buf+len / sizeof(buf)-len go out of range */
+    for (int i = 0; i < n && len < (int)sizeof(buf) - 1; i++)
         len += snprintf(buf + len, sizeof(buf) - (size_t)len,
                         "reg %d = %u  (0x%04X, i16 %d)\n",
                         addr + i, regs[i], regs[i], (int16_t)regs[i]);
@@ -1903,6 +1907,7 @@ static void cal_start_cb(lv_event_t *e)
     if (mb_service_write(slave, REG_CAL_SELECT,
                          (uint16_t)(1000 + type)) == 0) {
         cal_active = 1;
+        cal_slave  = slave;
         cal_buttons_enable(1);
         event_log("CAL", "Calibration started; card %d; type %s",
                   (int)lv_dropdown_get_selected(dd_scard) + 1,
@@ -2027,11 +2032,25 @@ static lv_obj_t *cal_lbl(int x, int y, const char *txt)
     return l;
 }
 
+/* leaving the calibration page abandons any running session: clear the
+ * card's cal-select register so it doesn't stay stuck in calibration
+ * mode. Uses the captured slave, not the (being-deleted) dropdown. */
+static void cal_page_delete_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    if (cal_active) {
+        mb_service_write(cal_slave, REG_CAL_SELECT, 0);
+        cal_active = 0;
+        event_log("CAL", "Calibration page left - session ended");
+    }
+}
+
 static void build_cal_form(void)
 {
     /* single fixed screen: no flex, no scrolling */
     lv_obj_set_layout(panel, LV_LAYOUT_NONE);
     lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(panel, cal_page_delete_cb, LV_EVENT_DELETE, NULL);
 
     char cards_opt[16];
     int len = 0;
@@ -2043,7 +2062,7 @@ static void build_cal_form(void)
     char topts[280];
     int tlen = 0;
     topts[0] = 0;
-    for (unsigned t = 1; t < 20; t++)
+    for (unsigned t = 1; t < 20 && tlen < (int)sizeof(topts) - 1; t++)
         tlen += snprintf(topts + tlen, sizeof(topts) - (size_t)tlen, "%s%s",
                          mb_type_name(t), t < 19 ? "\n" : "");
 
@@ -2686,11 +2705,22 @@ static void wm_anim_rot(void *obj, int32_t v)
 
 static lv_obj_t *wm_chart;
 static lv_chart_series_t *wm_s1, *wm_s2;
+static lv_timer_t *wm_timer;
+
+/* delete a page-scoped timer when its page root is torn down; the timer
+ * pointer lives in a static, passed by address as user_data. Guards
+ * against re-entering a page and orphaning (or duplicating) the timer. */
+static void timer_cleanup_cb(lv_event_t *e)
+{
+    lv_timer_t **slot = (lv_timer_t **)lv_event_get_user_data(e);
+    if (slot && *slot) { lv_timer_delete(*slot); *slot = NULL; }
+}
 
 static void wm_chart_tick(lv_timer_t *tmr)
 {
     if (!wm_chart || !lv_obj_is_valid(wm_chart)) {
         lv_timer_delete(tmr);
+        wm_timer = NULL;
         wm_chart = NULL;
         return;
     }
@@ -2726,6 +2756,7 @@ static void build_about(void)
 {
     lv_obj_set_layout(panel, LV_LAYOUT_NONE);
     lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(panel, timer_cleanup_cb, LV_EVENT_DELETE, &wm_timer);
 
     /* --- watermark scene (built first = stays behind the text) --- */
 
@@ -2753,7 +2784,7 @@ static void build_about(void)
                                 LV_CHART_AXIS_PRIMARY_Y);
     lv_chart_set_all_value(wm_chart, wm_s1, 58);
     lv_chart_set_all_value(wm_chart, wm_s2, 38);
-    lv_timer_create(wm_chart_tick, 90, NULL);
+    wm_timer = lv_timer_create(wm_chart_tick, 90, NULL);
 
     /* classic circular-chart dial with a turning pen arm */
     for (int r = 0; r < 3; r++) {
@@ -2890,6 +2921,9 @@ static void upd_install_cb(lv_event_t *e)
 
 static void build_update_form(void)
 {
+    lv_obj_add_event_cb(panel, timer_cleanup_cb, LV_EVENT_DELETE,
+                        &upd_timer);
+
     lv_obj_t *row = form_row("Installed version");
     lv_obj_t *v = lv_label_create(row);
     lv_label_set_text(v, FW_VERSION);
