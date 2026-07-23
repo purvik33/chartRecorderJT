@@ -54,7 +54,9 @@ static void set_defaults(void)
     strcpy(g_cfg.wifi_mask, "255.255.255.0");
     strcpy(g_cfg.wifi_gw,   "192.168.1.1");
     strcpy(g_cfg.factory_pin, "1234");
-    g_cfg.update_repo[0]  = 0;
+    /* OTA update server defaults to the product's own GitHub repo so
+     * every unit can check for updates out of the box */
+    strcpy(g_cfg.update_repo, "purvik33/chartRecorderJT");
     g_cfg.update_token[0] = 0;
     g_cfg.web_enable = 1;
     g_cfg.web_port   = 8080;
@@ -164,6 +166,11 @@ void config_load(void)
 
     if (g_cfg.tcp_port < 1 || g_cfg.tcp_port > 65535) g_cfg.tcp_port = 502;
     if (g_cfg.web_port < 1 || g_cfg.web_port > 65535) g_cfg.web_port = 8080;
+
+    /* OTA update server is always available: a blank update_repo (old
+     * or hand-cleared recorder.ini) falls back to the product repo */
+    if (!g_cfg.update_repo[0])
+        strcpy(g_cfg.update_repo, "purvik33/chartRecorderJT");
 
     /* minimum store interval is 1 minute (older configs may be lower) */
     if (g_cfg.store_interval < 60) g_cfg.store_interval = 60;
