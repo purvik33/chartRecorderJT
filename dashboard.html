@@ -109,22 +109,26 @@ main{grid-area:main;overflow-y:auto;overflow-x:hidden;padding:22px 24px 40px;}
 .ch .sp{display:flex;justify-content:space-between;color:var(--mut);
   font-size:12px;border-top:1px solid var(--line);margin-top:11px;padding-top:8px}
 
-/* ---------- Bar view ---------- */
-#bar-list{display:flex;flex-direction:column;gap:12px}
-.bar-row{background:var(--card);border:1px solid var(--line);
-  border-radius:var(--rad);padding:11px 15px;}
-.bar-top{display:flex;justify-content:space-between;align-items:baseline;
-  margin-bottom:8px;gap:10px}
-.bar-top .lbl{font-size:13px;color:var(--mut)}
-.bar-top .lbl b{color:var(--ink);font-weight:600}
-.bar-top .rv{font-size:16px;font-weight:600}
-.bar-top .rv small{font-size:12px;color:var(--mut);font-weight:400;margin-left:3px}
-.bar-track{height:14px;background:var(--sb);border-radius:8px;overflow:hidden;
-  border:1px solid var(--line);position:relative}
-.bar-fill{height:100%;border-radius:7px 0 0 7px;background:var(--acc);
-  transition:width .35s ease,background .2s;min-width:0}
-.bar-scale{display:flex;justify-content:space-between;color:var(--mut);
-  font-size:11px;margin-top:5px}
+/* ---------- Bar view (JUMO-style vertical bars) ---------- */
+#bar-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));
+  gap:12px;align-items:end}
+.bcol{background:var(--card);border:1px solid var(--line);
+  border-radius:var(--rad);padding:12px 6px 10px;text-align:center}
+.bcol.alm{border-color:var(--alm)}
+.bcol .btag{color:var(--mut);font-size:11.5px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.bcol .bval{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;
+  line-height:1.1}
+.bcol .bunit{color:var(--mut);font-size:11px;margin-bottom:4px;min-height:14px}
+.bcol .bhl{color:var(--mut);font-size:10px;font-variant-numeric:tabular-nums;
+  height:13px;line-height:13px}
+.bcol .btrk{position:relative;height:220px;width:44px;margin:2px auto;
+  background:var(--sb);border:1px solid var(--line);border-radius:6px;
+  overflow:hidden}
+.bcol .bfill{position:absolute;left:0;right:0;bottom:0;border-radius:0 0 5px 5px;
+  transition:height .3s ease,background .2s}
+.bcol .bmk{position:absolute;left:-1px;right:-1px;height:0;
+  border-top:2px dashed var(--alm)}
 
 /* ---------- Trend / canvas ---------- */
 .ctl-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
@@ -368,9 +372,8 @@ async function live(){
     const r=await fetch("/api/live");
     if(!r.ok)throw 0;
     const j=await r.json();
-    // backend sends alarm setpoints as lo/hi and the channel RANGE as
-    // rlo/rhi; this UI normalizes bar/polar to the range, so alias them.
-    j.ch.forEach(c=>{if("rlo"in c){c.lo=c.rlo;c.hi=c.rhi;}});
+    // backend fields: lo/hi = alarm setpoints, rlo/rhi = channel range.
+    // bar/polar scale to the range; alarm markers use the setpoints.
     LIVE=j;
     if(nCh!==j.ch.length){nCh=j.ch.length;buildDigital(nCh);buildBar(nCh);
       buildSelectors(j.ch);}
@@ -434,8 +437,8 @@ function updateDigital(j){
     val.innerHTML=isNum(c.status)
       ? `${c.value.toFixed(1)}<small>${c.unit}</small>`
       : `<span class="fault">${c.status}</span>`;
-    sp.children[0].textContent="L "+fmtSp(c.lo);
-    sp.children[1].textContent="H "+fmtSp(c.hi);
+    sp.children[0].textContent="L "+fmtSp(c.rlo);
+    sp.children[1].textContent="H "+fmtSp(c.rhi);
   });
 }
 function fmtSp(v){return (Math.abs(v)>=1000||Number.isInteger(v))?String(v):v.toFixed(1);}
@@ -445,36 +448,41 @@ function buildBar(n){
   const g=$("bar-list");g.innerHTML="";barRows=[];
   for(let i=0;i<n;i++){
     const d=document.createElement("div");
-    d.className="bar-row";
-    d.innerHTML=`<div class="bar-top"><span class="lbl">CH${i+1} <b></b></span>`+
-      `<span class="rv tnum">-</span></div>`+
-      `<div class="bar-track"><div class="bar-fill"></div></div>`+
-      `<div class="bar-scale"><span class="s0"></span><span class="s1"></span></div>`;
+    d.className="bcol";
+    d.innerHTML=`<div class="btag"></div><div class="bval">-</div>`+
+      `<div class="bunit"></div><div class="bhl bhi"></div>`+
+      `<div class="btrk"><div class="bfill"></div>`+
+      `<div class="bmk bmh" style="display:none"></div>`+
+      `<div class="bmk bml" style="display:none"></div></div>`+
+      `<div class="bhl blo"></div>`;
     g.appendChild(d);barRows.push(d);
   }
 }
 function updateBar(j){
   if(!barRows.length)return;
   j.ch.forEach((c,i)=>{
-    const d=barRows[i];if(!d)return;
-    const top=d.children[0],fill=d.children[1].children[0],scale=d.children[2];
-    top.children[0].innerHTML=`CH${c.n} <b>${c.tag}</b>`;
-    const rv=top.children[1];
-    rv.innerHTML=isNum(c.status)?`${c.value.toFixed(1)}<small>${c.unit}</small>`
-      :`<span style="color:var(--warn)">${c.status}</span>`;
-    let frac=0;
-    if(isNum(c.status)&&c.hi>c.lo){
-      frac=(c.value-c.lo)/(c.hi-c.lo);
-      frac=Math.max(0,Math.min(1,frac));
-    }
-    fill.style.width=(frac*100).toFixed(1)+"%";
-    let col=getComputedStyle(document.documentElement).getPropertyValue("--acc");
-    if(c.status==="HI"||c.status==="LO")col="var(--alm)";
-    else if(FAULT.has(c.status))col="var(--warn)";
-    else col="var(--acc)";
-    fill.style.background=col;
-    scale.children[0].textContent=fmtSp(c.lo);
-    scale.children[1].textContent=fmtSp(c.hi);
+    const b=barRows[i];if(!b)return;
+    const ok=isNum(c.status),alm=(c.status==="HI"||c.status==="LO");
+    const col=alm?"var(--alm)":POLC[i%POLC.length];
+    b.classList.toggle("alm",alm);
+    b.querySelector(".btag").textContent=`CH${c.n} ${c.tag}`;
+    const val=b.querySelector(".bval");
+    val.textContent=ok?c.value.toFixed(1):c.status;
+    val.style.color=ok?col:"var(--mut)";
+    val.style.fontSize=ok?"22px":"15px";
+    b.querySelector(".bunit").textContent=ok?c.unit:"";
+    // scale ends = channel range (rlo/rhi)
+    b.querySelector(".bhi").textContent=fmtSp(c.rhi);
+    b.querySelector(".blo").textContent=fmtSp(c.rlo);
+    const sp=(c.rhi-c.rlo)||1;
+    let p=(c.value-c.rlo)/sp;p=p<0?0:p>1?1:p;
+    const f=b.querySelector(".bfill");
+    f.style.height=(ok?p*100:0)+"%";f.style.background=col;
+    // alarm-limit markers use the alarm setpoints (lo/hi)
+    const mk=(el,v)=>{if(v>c.rlo&&v<c.rhi){el.style.display="block";
+      el.style.bottom=((v-c.rlo)/sp*100)+"%";}else el.style.display="none";};
+    mk(b.querySelector(".bmh"),c.hi);
+    mk(b.querySelector(".bml"),c.lo);
   });
 }
 
@@ -673,8 +681,8 @@ function drawPolar(c){
     const s=seriesFor(c.rows,i);
     if(s.length<1)return;
     let lo,hi;
-    if(LIVE&&LIVE.ch[i]&&LIVE.ch[i].hi>LIVE.ch[i].lo){
-      lo=LIVE.ch[i].lo;hi=LIVE.ch[i].hi;
+    if(LIVE&&LIVE.ch[i]&&LIVE.ch[i].rhi>LIVE.ch[i].rlo){
+      lo=LIVE.ch[i].rlo;hi=LIVE.ch[i].rhi;
     }else{lo=Math.min(...s.map(p=>p.v));hi=Math.max(...s.map(p=>p.v));
       if(hi-lo<1e-6){lo-=1;hi+=1;}}
     const col=POLC[i%POLC.length];
