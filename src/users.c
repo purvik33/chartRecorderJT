@@ -2,8 +2,31 @@
 #include "config.h"
 #include "events.h"
 #include <string.h>
+#include <stdio.h>
+#include <time.h>
 
 static int logged = -1;
+
+/* §11.300 password controls: lock an account for 5 minutes after 5
+ * consecutive failed logins (in-memory, cleared on success/restart) */
+#define CFR_MAX_FAILS   5
+#define CFR_LOCK_SECS   300
+static int    fail_count[CFR_USERS];
+static time_t lock_until[CFR_USERS];
+
+int cfr_pin_ok(const char *pin, char *msg, size_t n)
+{
+    size_t L = strlen(pin);
+    if (L < 6) { snprintf(msg, n, "PIN must be at least 6 characters"); return 0; }
+    int same = 1, seq = 1;
+    for (size_t i = 0; i < L; i++) {
+        if (pin[i] != pin[0]) same = 0;
+        if (i && pin[i] != pin[i-1] + 1) seq = 0;
+    }
+    if (same) { snprintf(msg, n, "PIN cannot be all the same character"); return 0; }
+    if (seq)  { snprintf(msg, n, "PIN cannot be a simple sequence"); return 0; }
+    snprintf(msg, n, "OK"); return 1;
+}
 
 int cfr_on(void) { return g_cfg.cfr_enable; }
 
@@ -26,10 +49,24 @@ int cfr_login(int idx, const char *pin)
 
     if (idx < 0 || idx >= CFR_USERS) return -1;
     cfr_user_t *u = &g_cfg.users[idx];
-    if (!u->active || strcmp(u->pin, pin) != 0) {
-        event_log("SYSTEM", "Login failed for user %s", u->name);
+    time_t now = time(NULL);
+
+    if (now < lock_until[idx]) {
+        event_log("SYSTEM", "Login blocked - user %s is locked out", u->name);
         return -1;
     }
+    if (!u->active || strcmp(u->pin, pin) != 0) {
+        if (u->active && ++fail_count[idx] >= CFR_MAX_FAILS) {
+            lock_until[idx] = now + CFR_LOCK_SECS;
+            fail_count[idx] = 0;
+            event_log("SYSTEM", "User %s locked out for %d min (%d failed"
+                      " logins)", u->name, CFR_LOCK_SECS / 60, CFR_MAX_FAILS);
+        } else {
+            event_log("SYSTEM", "Login failed for user %s", u->name);
+        }
+        return -1;
+    }
+    fail_count[idx] = 0; lock_until[idx] = 0;
     logged = idx;
     event_log("SYSTEM", "User %s logged in (%s)", u->name,
               role_txt[u->role >= 0 && u->role <= 3 ? u->role : 0]);

@@ -4,6 +4,7 @@
 #include "data_model.h"
 #include "config.h"
 #include "version.h"
+#include "users.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -580,6 +581,15 @@ int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen)
     pdf_text(pd, M + 320, sy + 13, 9, 1, 255, 255, 255, "Signature");
     pdf_text(pd, M + 440, sy + 13, 9, 1, 255, 255, 255, "Date & time");
     sy += 20;
+    /* in 21 CFR mode the logged-in operator's electronic signature (User
+     * ID authenticated at login) is executed onto the "Prepared" row */
+    const char *signer = NULL, *srole = "";
+    if (cfr_on() && cfr_logged_idx() >= 0) {
+        static const char *rt[] = { "Operator","Supervisor","Admin","Super admin" };
+        int r = cfr_role();
+        signer = cfr_user_name();
+        srole  = (r >= 0 && r <= 3) ? rt[r] : "";
+    }
     const char *acts[3] = { "Prepared / Author", "Reviewed", "Approved" };
     for (int i = 0; i < 3; i++) {
         pdf_rect(pd, M, sy, PW - 2 * M, 50, 0.6f, 150);
@@ -587,6 +597,12 @@ int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen)
         pdf_line(pd, M + 310, sy, M + 310, sy + 50, 0.6f, 150);
         pdf_line(pd, M + 430, sy, M + 430, sy + 50, 0.6f, 150);
         pdf_text(pd, M + 6, sy + 28, 9, 1, 13, 27, 42, acts[i]);
+        if (i == 0 && signer) {
+            pdf_text(pd, M + 136, sy + 22, 9, 0, 20, 20, 20, signer);
+            pdf_text(pd, M + 136, sy + 37, 8, 0, 120, 120, 120, srole);
+            pdf_text(pd, M + 316, sy + 28, 9, 1, 40, 120, 60, "[Electronically signed]");
+            pdf_text(pd, M + 436, sy + 28, 8, 0, 20, 20, 20, gen);
+        }
         sy += 50;
     }
     sy += 18;
@@ -598,6 +614,13 @@ int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen)
       "at acquisition. Any alteration of this printout voids its validity."
     };
     for (int i = 0; i < 5; i++) { pdf_text(pd, M, sy, 8.5f, 0, 70, 70, 70, stmt[i]); sy += 13; }
+    if (signer) {
+        char es[140];
+        snprintf(es, sizeof(es), "Prepared row electronically signed by %s (%s),"
+                 " authenticated at login per 21 CFR 11.200; logged in the audit"
+                 " trail.", signer, srole);
+        sy += 4; pdf_text(pd, M, sy, 8.5f, 0, 40, 120, 60, es); sy += 13;
+    }
     { char idl[96]; snprintf(idl, sizeof(idl), "Report ID: %s     Generated: %s", rid, gen);
       pdf_text(pd, M, sy + 8, 8, 0, 150, 150, 150, idl); }
 

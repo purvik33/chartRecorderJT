@@ -5,6 +5,8 @@
 #ifndef USERS_H
 #define USERS_H
 
+#include <stddef.h>
+
 /* access levels, lowest to highest:
  * Operator    - view, acknowledge, export
  * Supervisor  - + channel / logging / network setup
@@ -21,5 +23,9 @@ void cfr_logout(void);                   /* also called on menu leave */
 int  cfr_logged_idx(void);               /* -1 = nobody logged in     */
 int  cfr_role(void);                     /* role of logged user, -1   */
 const char *cfr_user_name(void);         /* logged name or "SYSTEM"   */
+
+/* validate a new PIN against the §11.300 complexity policy; returns 1 if
+ * acceptable, 0 with a reason in msg. */
+int cfr_pin_ok(const char *pin, char *msg, size_t n);
 
 #endif

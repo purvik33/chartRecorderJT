@@ -1267,8 +1267,18 @@ static void acc_save_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
     cfr_user_t *u = &g_cfg.users[acc_sel];
+    const char *newpin = lv_textarea_get_text(ta_accpin);
+    /* §11.300: enforce the PIN policy on any non-empty PIN */
+    if (newpin[0]) {
+        char why[64];
+        if (!cfr_pin_ok(newpin, why, sizeof(why))) {
+            lv_label_set_text_fmt(lbl_accinfo, "Weak PIN: %s", why);
+            lv_obj_set_style_text_color(lbl_accinfo, COL_ALARM_TXT, 0);
+            return;
+        }
+    }
     strncpy(u->name, lv_textarea_get_text(ta_accname), sizeof(u->name)-1);
-    strncpy(u->pin,  lv_textarea_get_text(ta_accpin),  sizeof(u->pin)-1);
+    strncpy(u->pin,  newpin,  sizeof(u->pin)-1);
     u->role   = (int)lv_dropdown_get_selected(dd_accrole);
     u->active = lv_dropdown_get_selected(dd_accact) == 0 ? 1 : 0;
     if (acc_sel == 0) { u->role = ROLE_SUPERADMIN; u->active = 1; }
@@ -1637,6 +1647,19 @@ static void export_report_cb(lv_event_t *e)
     usb_status_update();
 }
 
+static void export_verify_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    char msg[128], date[11];
+    struct tm b = *localtime(&exp_t1);
+    snprintf(date, sizeof(date), "%04d-%02d-%02d",
+             b.tm_year + 1900, b.tm_mon + 1, b.tm_mday);
+    int rc = event_audit_verify(date, msg, sizeof(msg));
+    lv_label_set_text(lbl_result, msg);
+    lv_obj_set_style_text_color(lbl_result,
+                                rc == 0 ? COL_ACCENT : COL_ALARM_TXT, 0);
+}
+
 /* absolute-position helpers for the single-screen export page */
 static lv_obj_t *exp_btn(int x, int y, int w, const char *txt,
                          lv_event_cb_t cb, bool primary)
@@ -1709,9 +1732,12 @@ static void build_export_form(void)
     exp_btn(410, 186, 330, LV_SYMBOL_FILE "  Event log (CSV)",
             export_events_cb, false);
 
-    lv_obj_t *note = exp_lbl(410, 240,
-        "PDF report matches the web dashboard: summary,\n"
-        "trend chart, per-day readings and 21 CFR signatures.");
+    exp_btn(410, 240, 330, LV_SYMBOL_OK "  Verify audit trail (End day)",
+            export_verify_cb, false);
+
+    lv_obj_t *note = exp_lbl(410, 292,
+        "PDF report matches the web dashboard. Verify checks the\n"
+        "tamper-evident hash chain of the day's audit trail.");
     lv_obj_set_style_text_font(note, &font_units_12, 0);
 }
 

@@ -39,6 +39,7 @@ add_executable(recorder_ui
     src/webserver.c
     src/export.c
     src/pdf.c
+    src/crypto.c
     src/events.c
     src/history.c
     src/ui/ui.c
