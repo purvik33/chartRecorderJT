@@ -1277,8 +1277,10 @@ static void acc_save_cb(lv_event_t *e)
             return;
         }
     }
+    int pin_changed = (newpin[0] && strcmp(newpin, u->pin) != 0);
     strncpy(u->name, lv_textarea_get_text(ta_accname), sizeof(u->name)-1);
     strncpy(u->pin,  newpin,  sizeof(u->pin)-1);
+    if (pin_changed) u->pin_set = (int)(time(NULL) / 86400);  /* reset aging */
     u->role   = (int)lv_dropdown_get_selected(dd_accrole);
     u->active = lv_dropdown_get_selected(dd_accact) == 0 ? 1 : 0;
     if (acc_sel == 0) { u->role = ROLE_SUPERADMIN; u->active = 1; }
@@ -1325,7 +1327,9 @@ static void build_accounts_form(void)
 
 /* ---- 21 CFR mode switch (Factory settings) ----------------------------- */
 
-static lv_obj_t *dd_cfren, *lbl_cfrres;
+static lv_obj_t *dd_cfren, *dd_esign, *dd_expiry, *lbl_cfrres;
+
+static const int expiry_vals[] = { 0, 30, 60, 90 };
 
 static void cfr_save_cb(lv_event_t *e)
 {
@@ -1334,11 +1338,15 @@ static void cfr_save_cb(lv_event_t *e)
     if (on != g_cfg.cfr_enable)
         event_log("CONFIG", "21 CFR mode turned %s", on ? "ON" : "OFF");
     g_cfg.cfr_enable = on;
+    g_cfg.esign_enable = lv_dropdown_get_selected(dd_esign) == 0 ? 1 : 0;
+    g_cfg.pin_expiry_days = expiry_vals[lv_dropdown_get_selected(dd_expiry)];
     config_save();
+    event_log("CONFIG", "21 CFR settings saved (e-sign %s; PIN expiry %d days)",
+              g_cfg.esign_enable ? "on" : "off", g_cfg.pin_expiry_days);
     lv_label_set_text_fmt(lbl_cfrres,
-        "21 CFR mode is %s.%s", on ? "ON" : "OFF",
-        on ? " The Menu now requires a login and Account manager"
-             " appears in the main menu." : "");
+        "21 CFR mode is %s.  E-signature %s.  PIN expiry %s.",
+        on ? "ON" : "OFF", g_cfg.esign_enable ? "on" : "off",
+        g_cfg.pin_expiry_days ? "on" : "off");
     lv_obj_set_style_text_color(lbl_cfrres, COL_ACCENT, 0);
 }
 
@@ -1346,6 +1354,13 @@ static void build_cfr_form(void)
 {
     dd_cfren = form_dd(form_row("21 CFR mode"), "Enabled\nDisabled",
                        g_cfg.cfr_enable ? 0 : 1);
+    dd_esign = form_dd(form_row("Electronic signature on report"),
+                       "Enabled\nDisabled", g_cfg.esign_enable ? 0 : 1);
+    int esel = 0;
+    for (int i = 0; i < 4; i++)
+        if (expiry_vals[i] == g_cfg.pin_expiry_days) esel = i;
+    dd_expiry = form_dd(form_row("PIN expiry"),
+                        "Off\n30 days\n60 days\n90 days", esel);
 
     page_save_button(LV_SYMBOL_SAVE "  Save", cfr_save_cb);
 
@@ -3177,11 +3192,14 @@ static void login_key_cb(lv_event_t *e)
     if (!strcmp(txt, LV_SYMBOL_OK)) {
         int row = (int)lv_dropdown_get_selected(login_dd);
         int idx = (row >= 0 && row < login_n) ? login_map[row] : -1;
-        if (cfr_login(idx, lv_textarea_get_text(login_ta)) == 0) {
+        int rc = cfr_login(idx, lv_textarea_get_text(login_ta));
+        if (rc == 0) {
             show_main_list();
         } else {
             lv_textarea_set_text(login_ta, "");
-            lv_label_set_text(login_msg, "Wrong PIN - try again");
+            lv_label_set_text(login_msg, rc == -2
+                ? "PIN expired - ask an administrator to reset it"
+                : "Wrong PIN, or account locked - try again");
             lv_obj_set_style_text_color(login_msg, COL_ALARM_TXT, 0);
         }
         return;

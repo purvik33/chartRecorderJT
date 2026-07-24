@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <pthread.h>
 #ifndef _WIN32
 #include <sys/stat.h>   /* chmod() - POSIX only */
@@ -62,6 +63,8 @@ static void set_defaults(void)
     g_cfg.web_port   = 8080;
 
     g_cfg.cfr_enable = 0;
+    g_cfg.esign_enable = 1;      /* executed e-signature on reports, on   */
+    g_cfg.pin_expiry_days = 0;   /* PIN aging off by default               */
     memset(g_cfg.users, 0, sizeof(g_cfg.users));
     strcpy(g_cfg.users[0].name, "SUPER ADMIN");
     strcpy(g_cfg.users[0].pin,  "1234");
@@ -132,13 +135,16 @@ void config_load(void)
             else if (!strcmp(key, "update_repo"))    { strncpy(g_cfg.update_repo,  val, sizeof(g_cfg.update_repo)-1);  g_cfg.update_repo[sizeof(g_cfg.update_repo)-1] = 0; }
             else if (!strcmp(key, "update_token"))   { strncpy(g_cfg.update_token, val, sizeof(g_cfg.update_token)-1); g_cfg.update_token[sizeof(g_cfg.update_token)-1] = 0; }
             else if (!strcmp(key, "cfr_enable"))     g_cfg.cfr_enable = atoi(val);
+            else if (!strcmp(key, "esign_enable"))   g_cfg.esign_enable = atoi(val);
+            else if (!strcmp(key, "pin_expiry_days")) g_cfg.pin_expiry_days = atoi(val);
             else if (!strncmp(key, "u", 1) && key[1] >= '1' && key[1] <= '8'
                      && key[2] == '_') {
                 cfr_user_t *u = &g_cfg.users[key[1] - '1'];
-                if      (!strcmp(key + 3, "name"))   { strncpy(u->name, val, sizeof(u->name)-1); u->name[sizeof(u->name)-1] = 0; }
-                else if (!strcmp(key + 3, "pin"))    { strncpy(u->pin,  val, sizeof(u->pin)-1);  u->pin[sizeof(u->pin)-1] = 0; }
-                else if (!strcmp(key + 3, "role"))   u->role = atoi(val);
-                else if (!strcmp(key + 3, "active")) u->active = atoi(val);
+                if      (!strcmp(key + 3, "name"))    { strncpy(u->name, val, sizeof(u->name)-1); u->name[sizeof(u->name)-1] = 0; }
+                else if (!strcmp(key + 3, "pin"))     { strncpy(u->pin,  val, sizeof(u->pin)-1);  u->pin[sizeof(u->pin)-1] = 0; }
+                else if (!strcmp(key + 3, "role"))    u->role = atoi(val);
+                else if (!strcmp(key + 3, "active"))  u->active = atoi(val);
+                else if (!strcmp(key + 3, "pin_set")) u->pin_set = atoi(val);
             }
             else if (!strncmp(key, "ch_color", 8)) {
                 int i = atoi(key + 8);
@@ -183,6 +189,15 @@ void config_load(void)
     if (!g_cfg.users[0].name[0] || !strcmp(g_cfg.users[0].name, "ADMIN"))
         strcpy(g_cfg.users[0].name, "SUPER ADMIN");
     if (!g_cfg.users[0].pin[0])  strcpy(g_cfg.users[0].pin,  "1234");
+
+    /* start the PIN-aging clock for any active account that predates this
+     * feature (pin_set == 0) so expiry is measured from now, not 1970 */
+    {
+        int today = (int)(time(NULL) / 86400);
+        for (int i = 0; i < 8; i++)
+            if (g_cfg.users[i].active && g_cfg.users[i].pin_set == 0)
+                g_cfg.users[i].pin_set = today;
+    }
 }
 
 void config_save(void)
@@ -230,12 +245,15 @@ void config_save(void)
     fprintf(f, "update_token=%s\n", g_cfg.update_token);
     fprintf(f, "\n[users]\n");
     fprintf(f, "cfr_enable=%d\n", g_cfg.cfr_enable);
+    fprintf(f, "esign_enable=%d\n", g_cfg.esign_enable);
+    fprintf(f, "pin_expiry_days=%d\n", g_cfg.pin_expiry_days);
     for (int i = 0; i < 8; i++) {
         cfr_user_t *u = &g_cfg.users[i];
         if (!u->name[0]) continue;
-        fprintf(f, "u%d_name=%s\nu%d_pin=%s\nu%d_role=%d\nu%d_active=%d\n",
+        fprintf(f, "u%d_name=%s\nu%d_pin=%s\nu%d_role=%d\nu%d_active=%d\n"
+                   "u%d_pin_set=%d\n",
                 i + 1, u->name, i + 1, u->pin, i + 1, u->role,
-                i + 1, u->active);
+                i + 1, u->active, i + 1, u->pin_set);
     }
     fprintf(f, "\n[system]\n");
     fprintf(f, "brand=%s\n", g_cfg.brand);

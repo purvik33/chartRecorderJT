@@ -10,6 +10,7 @@ typedef struct {
     char pin[12];
     int  role;      /* 0 operator, 1 supervisor, 2 administrator */
     int  active;
+    int  pin_set;   /* day-number (epoch/86400) the PIN was last set; 0=unknown */
 } cfr_user_t;
 
 /* register value encoding on the card */
@@ -70,6 +71,8 @@ typedef struct {
     /* 21 CFR Part 11 mode + user accounts (slot 0 is always the
      * built-in administrator so a lockout is impossible) */
     int        cfr_enable;
+    int        esign_enable;     /* print executed e-signature on reports */
+    int        pin_expiry_days;  /* PIN aging; 0 = never expires (§11.300) */
     cfr_user_t users[8];
 } app_cfg_t;
 

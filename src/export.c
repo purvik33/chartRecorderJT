@@ -584,7 +584,7 @@ int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen)
     /* in 21 CFR mode the logged-in operator's electronic signature (User
      * ID authenticated at login) is executed onto the "Prepared" row */
     const char *signer = NULL, *srole = "";
-    if (cfr_on() && cfr_logged_idx() >= 0) {
+    if (cfr_on() && g_cfg.esign_enable && cfr_logged_idx() >= 0) {
         static const char *rt[] = { "Operator","Supervisor","Admin","Super admin" };
         int r = cfr_role();
         signer = cfr_user_name();
