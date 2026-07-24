@@ -862,13 +862,14 @@ async function downloadPDF(){
   const days=daysInRange();
   if(!days.length){alert("No data in the selected range.");return;}
   const btn=$("dl-pdf"),label=btn.textContent;btn.textContent="Preparing…";btn.disabled=true;
-  let header=null; const rows=[];
+  let header=null; const byDay={}; const rows=[];
   for(const d of days){
     try{const r=await fetch(`/logs/${d}.csv`);if(!r.ok)continue;
       const txt=(await r.text()).trim();if(!txt)continue;
       const lines=txt.split("\n");const hd=lines.shift();
       if(header===null)header=hd.split(",");
-      lines.forEach(l=>{if(l)rows.push(l.split(","));});
+      const dr=[];lines.forEach(l=>{if(l){const c=l.split(",");dr.push(c);rows.push(c);}});
+      if(dr.length)byDay[d]=dr;
     }catch(e){}
   }
   btn.textContent=label;btn.disabled=false;
@@ -882,56 +883,112 @@ async function downloadPDF(){
     rows.forEach(c=>{if(isNum(c[2+2*i])){const v=parseFloat(c[1+2*i]);
       if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;sum+=v;n++;}}});
     st.push(n?{mn,mx,avg:sum/n,n}:null);}
-  // downsample the detail table so the PDF stays reasonable
-  const MAXR=3000, step=Math.max(1,Math.ceil(rows.length/MAXR));
-  const drows=step>1?rows.filter((_,k)=>k%step===0):rows;
-  const from=$("dl-from").value,to=$("dl-to").value;
-  const gen=new Date().toLocaleString();
-  const grp=(LIVE?("Group "+LIVE.grp):"");
   const fmt=v=>(Math.abs(v)>=1000||Number.isInteger(v))?String(v):v.toFixed(1);
+  const rng=i=>{let lo,hi;if(LIVE&&LIVE.ch[i]&&LIVE.ch[i].rhi>LIVE.ch[i].rlo){lo=LIVE.ch[i].rlo;hi=LIVE.ch[i].rhi;}
+    else{lo=Infinity;hi=-Infinity;rows.forEach(c=>{if(isNum(c[2+2*i])){const v=parseFloat(c[1+2*i]);
+      if(v<lo)lo=v;if(v>hi)hi=v;}});if(!(hi>lo)){lo=0;hi=1;}}return[lo,hi];};
+  // ---- trend chart (normalized %) rendered to a PNG ----
+  function trendPNG(){
+    const W=1600,H=470,cv=document.createElement("canvas");cv.width=W;cv.height=H;
+    const x=cv.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,W,H);
+    const L=56,R=18,T=16,B=48,pw=W-L-R,ph=H-T-B,N=rows.length;
+    x.strokeStyle="#ddd";x.fillStyle="#666";x.font="13px Arial";x.textAlign="right";x.textBaseline="middle";
+    for(let k=0;k<=5;k++){const y=T+ph*k/5;x.beginPath();x.moveTo(L,y);x.lineTo(W-R,y);x.stroke();
+      x.fillText((100-20*k)+"%",L-6,y);}
+    const stp=Math.max(1,Math.ceil(N/1400));
+    for(let i=0;i<nc;i++){const rr=rng(i),lo=rr[0],hi=rr[1];x.strokeStyle=POLC[i%POLC.length];
+      x.lineWidth=1.6;x.beginPath();let started=0;
+      for(let k=0;k<N;k+=stp){const c=rows[k];if(!isNum(c[2+2*i]))continue;
+        let f=(parseFloat(c[1+2*i])-lo)/(hi-lo);f=f<0?0:f>1?1:f;
+        const px=L+pw*k/Math.max(1,N-1),py=T+ph*(1-f);
+        started?x.lineTo(px,py):x.moveTo(px,py);started=1;}
+      x.stroke();}
+    x.strokeStyle="#999";x.lineWidth=1;x.strokeRect(L,T,pw,ph);
+    x.fillStyle="#666";x.textAlign="center";x.textBaseline="top";
+    for(let k=0;k<=6;k++){const idx=Math.round((N-1)*k/6),c=rows[idx];
+      if(c)x.fillText((c[0]||"").replace("T"," ").slice(5,16),L+pw*k/6,H-B+8);}
+    return cv.toDataURL("image/png");
+  }
+  const chartURL=trendPNG();
+  const legend=Array.from({length:nc},(_,i)=>
+    `<span class="lg"><i style="background:${POLC[i%POLC.length]}"></i>CH${i+1} ${tag(i)}</span>`).join("");
+  // ---- summary rows ----
   let sumRows="";
   for(let i=0;i<nc;i++){const s=st[i];
     sumRows+=`<tr><td class="l">CH${i+1}</td><td class="l">${tag(i)}</td><td>${unit(i)}</td>`+
       (s?`<td>${fmt(s.mn)}</td><td>${fmt(s.mx)}</td><td>${fmt(s.avg)}</td><td>${s.n}</td>`
         :`<td colspan="4">no valid samples</td>`)+`</tr>`;}
-  let head=`<tr><th class="l">Timestamp</th>`;
-  for(let i=0;i<nc;i++)head+=`<th>CH${i+1}${unit(i)?` <span class="u">${unit(i)}</span>`:""}</th>`;
-  head+=`</tr>`;
-  let detail="";
-  drows.forEach(c=>{
-    let r=`<tr><td class="l">${pesc((c[0]||"").replace("T"," "))}</td>`;
-    for(let i=0;i<nc;i++){const stt=c[2+2*i];
-      r+=isNum(stt)?`<td>${fmt(parseFloat(c[1+2*i]))}</td>`:`<td class="f">${pesc(stt||"-")}</td>`;}
-    detail+=r+"</tr>";});
-  const note=step>1?`<p class="note">Readings sampled every ${step} records (${drows.length} of ${rows.length} rows) to keep the PDF manageable — use “Download range as CSV” for the full data.</p>`:"";
+  // ---- one section (=one page) per day ----
+  const PERDAY=1600;let detail="";
+  Object.keys(byDay).sort().forEach(d=>{
+    const dr=byDay[d],stpd=Math.max(1,Math.ceil(dr.length/PERDAY));
+    const rr=stpd>1?dr.filter((_,k)=>k%stpd===0):dr;
+    let head=`<tr><th class="l">Time</th>`;
+    for(let i=0;i<nc;i++)head+=`<th>CH${i+1}${unit(i)?` <span class="u">${unit(i)}</span>`:""}</th>`;
+    head+=`</tr>`;
+    let body="";
+    rr.forEach(c=>{let row=`<tr><td class="l">${pesc((c[0]||"").slice(11,19)||c[0]||"")}</td>`;
+      for(let i=0;i<nc;i++){const stt=c[2+2*i];
+        row+=isNum(stt)?`<td>${fmt(parseFloat(c[1+2*i]))}</td>`:`<td class="f">${pesc(stt||"-")}</td>`;}
+      body+=row+"</tr>";});
+    detail+=`<section class="day"><h2>${d} <span class="sub">&mdash; ${dr.length} records`+
+      `${stpd>1?`, every ${stpd}`:""}</span></h2>`+
+      `<table><thead>${head}</thead><tbody>${body}</tbody></table></section>`;
+  });
+  const from=$("dl-from").value,to=$("dl-to").value;
+  const gen=new Date().toLocaleString();
+  const grp=(LIVE?("Group "+LIVE.grp):"");
+  const logo=`<svg width="46" height="46" viewBox="0 0 46 46"><rect x="1" y="1" width="44" height="44" rx="10" fill="#0d1b2a"/><path d="M8 31 L17 20 L23 26 L31 12 L39 21" fill="none" stroke="#4fc3f7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="31" cy="12" r="2.6" fill="#4fc3f7"/></svg>`;
   const html=`<!doctype html><html><head><meta charset="utf-8">`+
     `<title>PR-40 Data ${from}${from!==to?"_to_"+to:""}</title><style>`+
-    `@page{margin:12mm;size:A4 landscape}`+
+    `@page{margin:12mm 12mm 16mm;size:A4 landscape}`+
     `*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0}`+
-    `.hd{border-bottom:2px solid #0d1b2a;padding-bottom:8px;margin-bottom:12px}`+
-    `.hd h1{font-size:18px;margin:0;color:#0d1b2a}.hd h1 span{color:#2a7ab0}`+
-    `.meta{font-size:11px;color:#555;margin-top:4px}`+
-    `h2{font-size:13px;margin:16px 0 6px;color:#0d1b2a}`+
+    `.lh{display:flex;align-items:center;gap:14px}`+
+    `.lh-name{font-size:20px;color:#0d1b2a;font-weight:700}.lh-name b{color:#2a7ab0}`+
+    `.lh-prod{font-size:11px;color:#666}`+
+    `.lh-rt{margin-left:auto;text-align:right}`+
+    `.lh-title{font-size:16px;font-weight:700;color:#2a7ab0;letter-spacing:1px}`+
+    `.lh-meta{font-size:11px;color:#555;margin-top:2px}`+
+    `.rule{height:2px;background:#0d1b2a;margin:8px 0 10px}`+
+    `.meta{font-size:11px;color:#555;margin-bottom:6px}`+
+    `h2{font-size:13px;margin:14px 0 6px;color:#0d1b2a}`+
+    `h2 .sub{color:#888;font-weight:400;font-size:11px}`+
+    `img.chart{width:100%;height:auto;border:1px solid #ccc;border-radius:4px}`+
+    `.leg{display:flex;flex-wrap:wrap;gap:6px 16px;margin:6px 0;font-size:10px;color:#333}`+
+    `.leg .lg{display:inline-flex;align-items:center;gap:5px}`+
+    `.leg i{width:11px;height:11px;border-radius:2px;display:inline-block}`+
     `table{width:100%;border-collapse:collapse;font-size:10px}`+
     `th,td{border:1px solid #bbb;padding:3px 6px;text-align:right;font-variant-numeric:tabular-nums}`+
     `th{background:#eef3f7;color:#0d1b2a}.l{text-align:left}.u{color:#888;font-weight:400}`+
     `.f{color:#b26a00}thead{display:table-header-group}tr{page-break-inside:avoid}`+
-    `.summary th,.summary td{padding:4px 8px}.note{font-size:10px;color:#777;margin:6px 0}`+
+    `.summary th,.summary td{padding:4px 8px}.day{page-break-before:always}`+
+    `.pfoot{position:fixed;bottom:0;left:0;right:0;text-align:center;font-size:9px;`+
+    `color:#999;border-top:1px solid #ddd;padding:3px 0}`+
     `@media print{.noprint{display:none}}`+
     `.noprint{margin:10px 0}.pb{background:#2a7ab0;color:#fff;border:0;padding:8px 16px;`+
     `border-radius:6px;font-size:13px;cursor:pointer}</style></head><body>`+
     `<div class="noprint"><button class="pb" onclick="window.print()">Save as PDF / Print</button></div>`+
-    `<div class="hd"><h1>JETPACE <span>PR-40 Recorder</span> — Data Report</h1>`+
-    `<div class="meta">Period: <b>${from}</b> to <b>${to}</b> &nbsp;·&nbsp; ${grp} &nbsp;·&nbsp; `+
-    `${rows.length} records &nbsp;·&nbsp; Generated ${pesc(gen)}${LIVE?` &nbsp;·&nbsp; FW v${pesc(LIVE.fw||"")}`:""}</div></div>`+
+    `<div class="lh">${logo}<div><div class="lh-name">JETPACE <b>Technologies</b></div>`+
+    `<div class="lh-prod">PR-40 Paperless Recorder</div></div>`+
+    `<div class="lh-rt"><div class="lh-title">DATA REPORT</div>`+
+    `<div class="lh-meta">${from} to ${to}</div></div></div>`+
+    `<div class="rule"></div>`+
+    `<div class="meta">${grp} &nbsp;&middot;&nbsp; ${rows.length} records &nbsp;&middot;&nbsp; `+
+    `${days.length} day(s) &nbsp;&middot;&nbsp; Generated ${pesc(gen)}`+
+    `${LIVE?` &nbsp;&middot;&nbsp; FW v${pesc(LIVE.fw||"")}`:""}</div>`+
+    `<h2>Trend <span class="sub">&mdash; normalized to each channel's range</span></h2>`+
+    `<img class="chart" src="${chartURL}"><div class="leg">${legend}</div>`+
     `<h2>Summary</h2><table class="summary"><thead><tr><th class="l">Ch</th><th class="l">Tag</th>`+
-    `<th>Unit</th><th>Min</th><th>Max</th><th>Avg</th><th>Samples</th></tr></thead><tbody>${sumRows}</tbody></table>`+
-    `<h2>Readings</h2>${note}<table><thead>${head}</thead><tbody>${detail}</tbody></table>`+
+    `<th>Unit</th><th>Min</th><th>Max</th><th>Avg</th><th>Samples</th></tr></thead>`+
+    `<tbody>${sumRows}</tbody></table>`+
+    detail+
+    `<div class="pfoot">JETPACE PR-40 Recorder &middot; Data Report &middot; ${from} to ${to} `+
+    `&middot; Generated ${pesc(gen)}</div>`+
     `</body></html>`;
   const w=window.open("","_blank");
   if(!w){alert("Please allow pop-ups for this page to generate the PDF.");return;}
   w.document.write(html);w.document.close();
-  w.onload=()=>{w.focus();setTimeout(()=>w.print(),300);};
+  w.onload=()=>{w.focus();setTimeout(()=>w.print(),400);};
 }
 $("dl-show").onclick=renderData;
 $("dl-proc").onclick=downloadRangeCSV;
