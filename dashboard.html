@@ -149,10 +149,14 @@ canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line
 #polar-clock .pt{font-size:27px;font-weight:700;color:var(--ink);
   letter-spacing:.5px}
 #polar-clock .pd{font-size:13px;color:var(--mut);margin-top:3px}
-.pleg{display:flex;flex-wrap:wrap;gap:7px 16px;justify-content:center;width:100%}
-.pleg span{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;
+.pleg{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+  gap:6px 20px;width:100%;margin-top:4px}
+.pleg>span{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;
   color:var(--ink)}
 .pleg i{width:11px;height:11px;border-radius:3px;display:inline-block;flex:0 0 auto}
+.pleg .ct{min-width:120px}
+.pleg .mm{color:var(--mut);font-weight:400;margin-left:auto}
+.pleg .mm b{color:var(--ink);font-weight:600}
 /* ---------- Data / download ---------- */
 .dl-lbl{display:inline-flex;align-items:center;gap:8px;color:var(--mut);font-size:13.5px}
 input[type=date],input[type=search]{background:var(--card2);color:var(--ink);
@@ -748,7 +752,15 @@ function drawPolar(c){
     x.fillStyle=col;x.shadowColor=col;x.shadowBlur=8;
     x.beginPath();x.arc(last[0],last[1],3.4,0,7);x.fill();x.shadowBlur=0;
     const tag=(LIVE&&LIVE.ch[i])?LIVE.ch[i].tag:"";
-    leg.push(`<span><i style="background:${col}"></i>CH${i+1} ${tag}</span>`);
+    const unit=(LIVE&&LIVE.ch[i])?LIVE.ch[i].unit:"";
+    const vs=s.map(p=>p.v);
+    const vmn=Math.min(...vs),vmx=Math.max(...vs),
+          vav=vs.reduce((a,b)=>a+b,0)/vs.length;
+    leg.push(`<span><i style="background:${col}"></i>`+
+      `<b class="ct">CH${i+1} ${tag}</b>`+
+      `<span class="mm">min <b>${vmn.toFixed(1)}</b> &middot; `+
+      `max <b>${vmx.toFixed(1)}</b> &middot; avg <b>${vav.toFixed(1)}</b> ${unit}</span>`+
+      `</span>`);
   });
   $("polar-stats").innerHTML=leg.length
     ?`<div class="pleg">${leg.join("")}</div>`
