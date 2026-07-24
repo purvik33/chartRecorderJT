@@ -155,9 +155,10 @@ canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line
 .pleg i{width:11px;height:11px;border-radius:3px;display:inline-block;flex:0 0 auto}
 /* ---------- Data / download ---------- */
 .dl-lbl{display:inline-flex;align-items:center;gap:8px;color:var(--mut);font-size:13.5px}
-input[type=date]{background:var(--card2);color:var(--ink);border:1px solid var(--line);
-  border-radius:8px;padding:7px 10px;font-size:14px;font-family:inherit;color-scheme:dark}
-input[type=date]:hover{border-color:var(--acc)}
+input[type=date],input[type=search]{background:var(--card2);color:var(--ink);
+  border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:14px;
+  font-family:inherit;color-scheme:dark}
+input[type=date]:hover,input[type=search]:hover,input[type=search]:focus{border-color:var(--acc)}
 .dl-tbl a{color:var(--acc);text-decoration:none;font-weight:600}
 .dl-tbl a:hover{text-decoration:underline}
 .btn.primary{background:var(--acc);border-color:var(--acc);color:#07131f;font-weight:600}
@@ -321,6 +322,7 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
       <div class="ctl-row">
         <label class="dl-lbl">From <input type="date" id="dl-from"></label>
         <label class="dl-lbl">To <input type="date" id="dl-to"></label>
+        <label class="dl-lbl">Find day <input type="search" id="dl-search" placeholder="e.g. 2026-07-23"></label>
         <button class="btn" id="dl-show">Show</button>
         <button class="btn primary" id="dl-proc">Download range as CSV</button>
         <button class="btn" id="dl-pdf">Download PDF</button>
@@ -812,10 +814,13 @@ function daysInRange(){
   return (dayList||[]).filter(d=>(!from||d>=from)&&(!to||d<=to)).sort();
 }
 function renderData(){
-  const body=$("dl-body"), days=daysInRange();
+  const body=$("dl-body");
+  const q=($("dl-search").value||"").trim();
+  let days=daysInRange();
+  if(q)days=days.filter(d=>d.includes(q));
   if(!days.length){
     body.innerHTML=`<div class="empty"><div class="big">&#128193;</div>`+
-      `No logged data in the selected range.</div>`;
+      (q?`No day matches “${pesc(q)}”.`:`No logged data in the selected range.`)+`</div>`;
     return;
   }
   let h=`<div class="tbl-wrap"><table class="dl-tbl"><thead><tr>`+
@@ -941,7 +946,7 @@ async function downloadPDF(){
   const logo=`<svg width="46" height="46" viewBox="0 0 46 46"><rect x="1" y="1" width="44" height="44" rx="10" fill="#0d1b2a"/><path d="M8 31 L17 20 L23 26 L31 12 L39 21" fill="none" stroke="#4fc3f7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="31" cy="12" r="2.6" fill="#4fc3f7"/></svg>`;
   const html=`<!doctype html><html><head><meta charset="utf-8">`+
     `<title>PR-40 Data ${from}${from!==to?"_to_"+to:""}</title><style>`+
-    `@page{margin:12mm 12mm 16mm;size:A4 landscape}`+
+    `@page{size:A4 portrait;margin:12mm 12mm 16mm}@page land{size:A4 landscape;margin:10mm}`+
     `*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0}`+
     `.lh{display:flex;align-items:center;gap:14px}`+
     `.lh-name{font-size:20px;color:#0d1b2a;font-weight:700}.lh-name b{color:#2a7ab0}`+
@@ -962,6 +967,7 @@ async function downloadPDF(){
     `th{background:#eef3f7;color:#0d1b2a}.l{text-align:left}.u{color:#888;font-weight:400}`+
     `.f{color:#b26a00}thead{display:table-header-group}tr{page-break-inside:avoid}`+
     `.summary th,.summary td{padding:4px 8px}.day{page-break-before:always}`+
+    `.landscape{page:land;page-break-before:always;page-break-after:always}`+
     `.pfoot{position:fixed;bottom:0;left:0;right:0;text-align:center;font-size:9px;`+
     `color:#999;border-top:1px solid #ddd;padding:3px 0}`+
     `@media print{.noprint{display:none}}`+
@@ -976,11 +982,11 @@ async function downloadPDF(){
     `<div class="meta">${grp} &nbsp;&middot;&nbsp; ${rows.length} records &nbsp;&middot;&nbsp; `+
     `${days.length} day(s) &nbsp;&middot;&nbsp; Generated ${pesc(gen)}`+
     `${LIVE?` &nbsp;&middot;&nbsp; FW v${pesc(LIVE.fw||"")}`:""}</div>`+
-    `<h2>Trend <span class="sub">&mdash; normalized to each channel's range</span></h2>`+
-    `<img class="chart" src="${chartURL}"><div class="leg">${legend}</div>`+
     `<h2>Summary</h2><table class="summary"><thead><tr><th class="l">Ch</th><th class="l">Tag</th>`+
     `<th>Unit</th><th>Min</th><th>Max</th><th>Avg</th><th>Samples</th></tr></thead>`+
     `<tbody>${sumRows}</tbody></table>`+
+    `<section class="landscape"><h2>Trend <span class="sub">&mdash; normalized to each channel's range</span></h2>`+
+    `<img class="chart" src="${chartURL}"><div class="leg">${legend}</div></section>`+
     detail+
     `<div class="pfoot">JETPACE PR-40 Recorder &middot; Data Report &middot; ${from} to ${to} `+
     `&middot; Generated ${pesc(gen)}</div>`+
@@ -995,6 +1001,7 @@ $("dl-proc").onclick=downloadRangeCSV;
 $("dl-pdf").onclick=downloadPDF;
 $("dl-from").onchange=renderData;
 $("dl-to").onchange=renderData;
+$("dl-search").oninput=renderData;
 
 /* ============================================================
    RESIZE — redraw active canvas
