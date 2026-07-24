@@ -323,6 +323,7 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
         <label class="dl-lbl">To <input type="date" id="dl-to"></label>
         <button class="btn" id="dl-show">Show</button>
         <button class="btn primary" id="dl-proc">Download range as CSV</button>
+        <button class="btn" id="dl-pdf">Download PDF</button>
       </div>
       <div id="dl-body"></div>
     </section>
@@ -854,8 +855,87 @@ async function downloadRangeCSV(){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
+// build a printable report of the range and hand it to the browser's
+// "Save as PDF" (no external libraries; works offline on the Pi).
+function pesc(s){return String(s).replace(/[&<>]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]));}
+async function downloadPDF(){
+  const days=daysInRange();
+  if(!days.length){alert("No data in the selected range.");return;}
+  const btn=$("dl-pdf"),label=btn.textContent;btn.textContent="Preparing…";btn.disabled=true;
+  let header=null; const rows=[];
+  for(const d of days){
+    try{const r=await fetch(`/logs/${d}.csv`);if(!r.ok)continue;
+      const txt=(await r.text()).trim();if(!txt)continue;
+      const lines=txt.split("\n");const hd=lines.shift();
+      if(header===null)header=hd.split(",");
+      lines.forEach(l=>{if(l)rows.push(l.split(","));});
+    }catch(e){}
+  }
+  btn.textContent=label;btn.disabled=false;
+  if(!rows.length){alert("No process data in the selected range.");return;}
+  const nc=(LIVE&&LIVE.ch)?LIVE.ch.length:Math.floor(((header?header.length:1)-1)/2);
+  const tag=i=>pesc((LIVE&&LIVE.ch[i])?LIVE.ch[i].tag:((header&&header[1+2*i])||("CH"+(i+1))));
+  const unit=i=>pesc((LIVE&&LIVE.ch[i])?LIVE.ch[i].unit:"");
+  // per-channel summary
+  const st=[];
+  for(let i=0;i<nc;i++){let mn=Infinity,mx=-Infinity,sum=0,n=0;
+    rows.forEach(c=>{if(isNum(c[2+2*i])){const v=parseFloat(c[1+2*i]);
+      if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;sum+=v;n++;}}});
+    st.push(n?{mn,mx,avg:sum/n,n}:null);}
+  // downsample the detail table so the PDF stays reasonable
+  const MAXR=3000, step=Math.max(1,Math.ceil(rows.length/MAXR));
+  const drows=step>1?rows.filter((_,k)=>k%step===0):rows;
+  const from=$("dl-from").value,to=$("dl-to").value;
+  const gen=new Date().toLocaleString();
+  const grp=(LIVE?("Group "+LIVE.grp):"");
+  const fmt=v=>(Math.abs(v)>=1000||Number.isInteger(v))?String(v):v.toFixed(1);
+  let sumRows="";
+  for(let i=0;i<nc;i++){const s=st[i];
+    sumRows+=`<tr><td class="l">CH${i+1}</td><td class="l">${tag(i)}</td><td>${unit(i)}</td>`+
+      (s?`<td>${fmt(s.mn)}</td><td>${fmt(s.mx)}</td><td>${fmt(s.avg)}</td><td>${s.n}</td>`
+        :`<td colspan="4">no valid samples</td>`)+`</tr>`;}
+  let head=`<tr><th class="l">Timestamp</th>`;
+  for(let i=0;i<nc;i++)head+=`<th>CH${i+1}${unit(i)?` <span class="u">${unit(i)}</span>`:""}</th>`;
+  head+=`</tr>`;
+  let detail="";
+  drows.forEach(c=>{
+    let r=`<tr><td class="l">${pesc((c[0]||"").replace("T"," "))}</td>`;
+    for(let i=0;i<nc;i++){const stt=c[2+2*i];
+      r+=isNum(stt)?`<td>${fmt(parseFloat(c[1+2*i]))}</td>`:`<td class="f">${pesc(stt||"-")}</td>`;}
+    detail+=r+"</tr>";});
+  const note=step>1?`<p class="note">Readings sampled every ${step} records (${drows.length} of ${rows.length} rows) to keep the PDF manageable — use “Download range as CSV” for the full data.</p>`:"";
+  const html=`<!doctype html><html><head><meta charset="utf-8">`+
+    `<title>PR-40 Data ${from}${from!==to?"_to_"+to:""}</title><style>`+
+    `@page{margin:12mm;size:A4 landscape}`+
+    `*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0}`+
+    `.hd{border-bottom:2px solid #0d1b2a;padding-bottom:8px;margin-bottom:12px}`+
+    `.hd h1{font-size:18px;margin:0;color:#0d1b2a}.hd h1 span{color:#2a7ab0}`+
+    `.meta{font-size:11px;color:#555;margin-top:4px}`+
+    `h2{font-size:13px;margin:16px 0 6px;color:#0d1b2a}`+
+    `table{width:100%;border-collapse:collapse;font-size:10px}`+
+    `th,td{border:1px solid #bbb;padding:3px 6px;text-align:right;font-variant-numeric:tabular-nums}`+
+    `th{background:#eef3f7;color:#0d1b2a}.l{text-align:left}.u{color:#888;font-weight:400}`+
+    `.f{color:#b26a00}thead{display:table-header-group}tr{page-break-inside:avoid}`+
+    `.summary th,.summary td{padding:4px 8px}.note{font-size:10px;color:#777;margin:6px 0}`+
+    `@media print{.noprint{display:none}}`+
+    `.noprint{margin:10px 0}.pb{background:#2a7ab0;color:#fff;border:0;padding:8px 16px;`+
+    `border-radius:6px;font-size:13px;cursor:pointer}</style></head><body>`+
+    `<div class="noprint"><button class="pb" onclick="window.print()">Save as PDF / Print</button></div>`+
+    `<div class="hd"><h1>JETPACE <span>PR-40 Recorder</span> — Data Report</h1>`+
+    `<div class="meta">Period: <b>${from}</b> to <b>${to}</b> &nbsp;·&nbsp; ${grp} &nbsp;·&nbsp; `+
+    `${rows.length} records &nbsp;·&nbsp; Generated ${pesc(gen)}${LIVE?` &nbsp;·&nbsp; FW v${pesc(LIVE.fw||"")}`:""}</div></div>`+
+    `<h2>Summary</h2><table class="summary"><thead><tr><th class="l">Ch</th><th class="l">Tag</th>`+
+    `<th>Unit</th><th>Min</th><th>Max</th><th>Avg</th><th>Samples</th></tr></thead><tbody>${sumRows}</tbody></table>`+
+    `<h2>Readings</h2>${note}<table><thead>${head}</thead><tbody>${detail}</tbody></table>`+
+    `</body></html>`;
+  const w=window.open("","_blank");
+  if(!w){alert("Please allow pop-ups for this page to generate the PDF.");return;}
+  w.document.write(html);w.document.close();
+  w.onload=()=>{w.focus();setTimeout(()=>w.print(),300);};
+}
 $("dl-show").onclick=renderData;
 $("dl-proc").onclick=downloadRangeCSV;
+$("dl-pdf").onclick=downloadPDF;
 $("dl-from").onchange=renderData;
 $("dl-to").onchange=renderData;
 
