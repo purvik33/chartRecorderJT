@@ -145,27 +145,11 @@ canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line
 /* trend layout styles (Settings > Trend style) */
 .tgraph{width:100%}
 #trend-values{display:none}
-#trend-card.tv{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
-#trend-card.tv .tgraph{flex:1 1 400px;min-width:0}
-#trend-card.tv #trend-values{display:block;flex:0 1 250px;min-width:210px}
-/* JUMO horizontal-diagram value column */
-.tvlist{display:flex;flex-direction:column;border:1px solid var(--line);
-  border-radius:10px;background:var(--card);overflow:hidden}
-.tvrow{display:flex;align-items:center;gap:11px;padding:9px 12px;
-  border-bottom:1px solid var(--line)}
-.tvrow:last-child{border-bottom:none}
-.tvb{flex:0 0 auto;width:26px;height:26px;border-radius:5px;color:#07131f;
-  font-weight:700;font-size:13px;display:flex;align-items:center;
-  justify-content:center}
-.tvtxt{min-width:0}
-.tvtag{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis}
-.tvval{font-size:23px;font-weight:700;font-variant-numeric:tabular-nums;
-  line-height:1.12}
-.tvval .tvu{font-size:12px;color:var(--mut);font-weight:400;margin-left:3px}
-.tvmm{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
-@media(max-width:640px){#trend-card.tv .tgraph{flex-basis:100%}
-  #trend-card.tv #trend-values{flex-basis:100%}}
+#trend-card.tv{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+#trend-card.tv .tgraph{flex:1 1 380px;min-width:0}
+#trend-card.tv #trend-values{display:block;flex:1 1 260px;min-width:240px}
+#trend-values .tbl-wrap{width:100%}
+@media(max-width:640px){#trend-card.tv .tgraph{flex-basis:100%}}
 #polar-clock{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   text-align:center;pointer-events:none;line-height:1.15;padding:16px 22px;
   border-radius:50%;
@@ -724,23 +708,26 @@ function drawTrendVert(x,W,H){
 /* right-side channel values table (logger style) for the 'values' layout */
 function buildTrendValues(c){
   const nc=(LIVE&&LIVE.ch)?LIVE.ch.length:0;
-  let cards="";
+  let rows="";
   for(let i=0;i<nc;i++){
     const s=(c&&c.rows)?seriesFor(c.rows,i):[];
     const tag=(LIVE&&LIVE.ch[i])?LIVE.ch[i].tag:"";
     const unit=(LIVE&&LIVE.ch[i])?LIVE.ch[i].unit:"";
-    const cur=(LIVE&&LIVE.ch[i]&&isNum(LIVE.ch[i].status))
-      ?LIVE.ch[i].value.toFixed(3):"–";
-    let mn="–",mx="–";
+    let mn="–",mx="–",av="–";
     if(s.length){const vs=s.map(p=>p.v);
-      mn=Math.min(...vs).toFixed(1);mx=Math.max(...vs).toFixed(1);}
-    const col=POLC[i%POLC.length];
-    cards+=`<div class="tvrow"><span class="tvb" style="background:${col}">${i+1}</span>`+
-      `<div class="tvtxt"><div class="tvtag" style="color:${col}">CH${i+1} ${tag}</div>`+
-      `<div class="tvval">${cur}<span class="tvu">${unit}</span></div>`+
-      `<div class="tvmm">Min ${mn} &middot; Max ${mx}</div></div></div>`;
+      mn=Math.min(...vs).toFixed(1);mx=Math.max(...vs).toFixed(1);
+      av=(vs.reduce((a,b)=>a+b,0)/vs.length).toFixed(1);}
+    const cur=(LIVE&&LIVE.ch[i]&&isNum(LIVE.ch[i].status))
+      ?LIVE.ch[i].value.toFixed(1):"–";
+    rows+=`<tr><td class="sw"><i style="background:${POLC[i%POLC.length]}"></i></td>`+
+      `<td class="l">CH${i+1} <b>${tag}</b></td><td>${cur}</td>`+
+      `<td>${mn}</td><td>${mx}</td><td><b>${av}</b></td><td class="u">${unit}</td></tr>`;
   }
-  $("trend-values").innerHTML=nc?`<div class="tvlist">${cards}</div>`:"";
+  $("trend-values").innerHTML=nc
+    ?`<div class="tbl-wrap"><table class="ptbl"><thead><tr><th></th>`+
+     `<th class="l">Channel</th><th>Now</th><th>Min</th><th>Max</th>`+
+     `<th>Avg</th><th class="l">Unit</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    :"";
 }
 function applyTrendStyle(){
   $("trend-card").classList.toggle("tv",trendStyle==="values");

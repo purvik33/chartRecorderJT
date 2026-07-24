@@ -57,15 +57,14 @@ static bool built;
 
 /* chart width depends on the trend style (line = full, line+values =
  * leaves room for the values panel on the right) */
-#define VP_W 214
+#define VP_W 340
 static int chart_w(void)
 {
     return (g_cfg.trend_style == 1) ? (800 - 64 - 8 - (VP_W + 8))
                                     : (800 - 64 - 8);
 }
 
-/* JUMO horizontal-diagram value column: big live value (or window avg for
- * history) + a small Min/Max line, per channel */
+/* per-channel min / max / avg over the visible window (polar-tile style) */
 static void values_update(void)
 {
     if (!vpanel || g_cfg.trend_style != 1) return;
@@ -84,23 +83,15 @@ static void values_update(void)
         data_lock();
         char unit[8];
         lv_snprintf(unit, sizeof(unit), "%s", g_ch[base + c].unit);
-        ch_status_t st = g_ch[base + c].status;
-        float now = g_ch[base + c].value;
         data_unlock();
-        int ok = (st == CH_OK || st == CH_ALM_HI || st == CH_ALM_LO);
-
-        if (day_off == 0 && ok)
-            lv_label_set_text_fmt(vavg[c], "%.1f %s", (double)now, unit);
-        else if (n)
+        if (n > 0) {
             lv_label_set_text_fmt(vavg[c], "%.1f %s",
                                   (double)(sum / (float)n), unit);
-        else
-            lv_label_set_text(vavg[c], "--");
-
-        if (vmm[c]) {
-            if (n) lv_label_set_text_fmt(vmm[c], "Min %.1f  Max %.1f",
-                                         (double)mn, (double)mx);
-            else   lv_label_set_text(vmm[c], "");
+            lv_label_set_text_fmt(vmm[c], "Min %.1f  Max %.1f",
+                                  (double)mn, (double)mx);
+        } else {
+            lv_label_set_text(vavg[c], "no data");
+            lv_label_set_text(vmm[c], "");
         }
     }
 }
@@ -547,52 +538,43 @@ void scr_trend_build(lv_obj_t *parent)
         lv_obj_set_style_border_color(vpanel, COL_BORDER, 0);
         lv_obj_set_style_border_width(vpanel, 1, 0);
         lv_obj_set_style_radius(vpanel, 8, 0);
-        lv_obj_set_style_pad_all(vpanel, 6, 0);
-        lv_obj_set_layout(vpanel, LV_LAYOUT_NONE);   /* JUMO value column */
+        lv_obj_set_style_pad_all(vpanel, 8, 0);
+        lv_obj_set_layout(vpanel, LV_LAYOUT_NONE);   /* absolute 2x4 grid */
         lv_obj_remove_flag(vpanel, LV_OBJ_FLAG_SCROLLABLE);
-        int rowh = (chart_h - 12) / CH_PER_GROUP;
+        int tw = (VP_W - 16 - 6) / 2;             /* two tiles across */
+        int th = (chart_h - 16 - 3 * 6) / 4;      /* four tiles down  */
         for (int i = 0; i < CH_PER_GROUP; i++) {
             lv_color_t cc = lv_color_hex(series_colors[i]);
-            int y = i * rowh;
-            if (i) {
-                lv_obj_t *sep = lv_obj_create(vpanel);
-                lv_obj_set_size(sep, VP_W - 12, 1);
-                lv_obj_set_pos(sep, 0, y);
-                lv_obj_set_style_bg_color(sep, COL_BORDER, 0);
-                lv_obj_set_style_border_width(sep, 0, 0);
-                lv_obj_set_style_radius(sep, 0, 0);
-                lv_obj_remove_flag(sep, LV_OBJ_FLAG_SCROLLABLE);
-            }
-            /* colour badge with the channel number */
-            lv_obj_t *bd = lv_obj_create(vpanel);
-            lv_obj_set_size(bd, 26, 26);
-            lv_obj_set_pos(bd, 0, y + (rowh - 26) / 2);
-            lv_obj_set_style_bg_color(bd, cc, 0);
-            lv_obj_set_style_border_width(bd, 0, 0);
-            lv_obj_set_style_radius(bd, 5, 0);
-            lv_obj_set_style_pad_all(bd, 0, 0);
-            lv_obj_remove_flag(bd, LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_t *bn = lv_label_create(bd);
-            lv_label_set_text_fmt(bn, "%d", base + i + 1);
-            lv_obj_set_style_text_font(bn, &font_units_12, 0);
-            lv_obj_set_style_text_color(bn, COL_BG, 0);
-            lv_obj_center(bn);
+            lv_obj_t *tile = lv_obj_create(vpanel);
+            lv_obj_set_size(tile, tw, th);
+            lv_obj_set_pos(tile, (i % 2) * (tw + 6), (i / 2) * (th + 6));
+            lv_obj_set_style_bg_color(tile, lv_color_mix(cc, COL_PANEL, 30), 0);
+            lv_obj_set_style_border_color(tile, cc, 0);
+            lv_obj_set_style_border_width(tile, 2, 0);
+            lv_obj_set_style_radius(tile, 6, 0);
+            lv_obj_set_style_pad_all(tile, 6, 0);
+            lv_obj_remove_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
 
-            vtag[i] = lv_label_create(vpanel);
+            vtag[i] = lv_label_create(tile);
             data_lock();
-            lv_label_set_text_fmt(vtag[i], "%s", g_ch[base + i].tag);
+            lv_label_set_text_fmt(vtag[i], "CH%d %s", base + i + 1,
+                                  g_ch[base + i].tag);
             data_unlock();
             lv_obj_set_style_text_font(vtag[i], &font_units_12, 0);
             lv_obj_set_style_text_color(vtag[i], cc, 0);
-            lv_obj_set_pos(vtag[i], 34, y + 3);
+            lv_obj_align(vtag[i], LV_ALIGN_TOP_LEFT, 0, 0);
 
-            vavg[i] = lv_label_create(vpanel);
+            vavg[i] = lv_label_create(tile);
             lv_label_set_text(vavg[i], "-");
             lv_obj_set_style_text_font(vavg[i], &font_units_16, 0);
             lv_obj_set_style_text_color(vavg[i], COL_TEXT, 0);
-            lv_obj_set_pos(vavg[i], 34, y + 16);
+            lv_obj_align(vavg[i], LV_ALIGN_LEFT_MID, 0, 4);
 
-            vmm[i] = NULL;
+            vmm[i] = lv_label_create(tile);
+            lv_label_set_text(vmm[i], "");
+            lv_obj_set_style_text_font(vmm[i], &font_units_12, 0);
+            lv_obj_set_style_text_color(vmm[i], COL_MUTED, 0);
+            lv_obj_align(vmm[i], LV_ALIGN_BOTTOM_LEFT, 0, 0);
         }
     }
 
