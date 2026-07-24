@@ -273,8 +273,9 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
     <!-- TREND -->
     <section class="screen" id="s-trend">
       <div class="scr-head"><h2>Trend</h2>
-        <span class="sub">Today's stored samples</span></div>
+        <span class="sub">Stored samples &mdash; select any logged date</span></div>
       <div class="ctl-row">
+        <label class="dl-lbl">Date <input type="date" id="trend-day"></label>
         <select id="trend-sel"></select>
         <button class="btn" id="trend-reload">Reload</button>
       </div>
@@ -287,8 +288,9 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
     <!-- POLAR -->
     <section class="screen" id="s-polar">
       <div class="scr-head"><h2>Polar</h2>
-        <span class="sub">24-hour circular chart (midnight top, clockwise)</span></div>
+        <span class="sub">24-hour circular chart (midnight top, clockwise) &mdash; select any logged date</span></div>
       <div class="ctl-row">
+        <label class="dl-lbl">Date <input type="date" id="polar-day"></label>
         <select id="polar-sel"><option value="-1">All channels</option></select>
         <button class="btn" id="polar-reload">Reload</button>
       </div>
@@ -529,25 +531,24 @@ function buildSelectors(ch){
 /* ============================================================
    CSV LOADING (cached per day)
    ============================================================ */
-let csvCache={day:null,rows:null,hdr:null,promise:null};
-async function loadCsv(force){
-  const day=today();
-  if(!force&&csvCache.day===day&&csvCache.rows)return csvCache;
-  if(csvCache.promise&&csvCache.day===day&&!force)return csvCache.promise;
-  csvCache.day=day;
-  csvCache.promise=(async()=>{
+const csvCache={};   // day -> {rows,hdr,promise}
+async function loadCsv(day,force){
+  day=day||today();
+  const c=csvCache[day]||(csvCache[day]={});
+  if(!force&&c.rows)return c;
+  if(!force&&c.promise)return c.promise;
+  c.promise=(async()=>{
     try{
       const r=await fetch(`/logs/${day}.csv`);
       if(!r.ok)throw 0;
       const txt=await r.text();
       const lines=txt.trim().split("\n").filter(l=>l.length);
       const hdr=lines.shift().split(",");
-      const rows=lines.map(l=>l.split(","));
-      csvCache.rows=rows;csvCache.hdr=hdr;
-    }catch(e){csvCache.rows=[];csvCache.hdr=null;}
-    return csvCache;
+      c.rows=lines.map(l=>l.split(","));c.hdr=hdr;
+    }catch(e){c.rows=[];c.hdr=null;}
+    return c;
   })();
-  return csvCache.promise;
+  return c.promise;
 }
 
 /* extract series for channel index i => [{t,v}] using numeric samples */
@@ -568,23 +569,26 @@ function seriesFor(rows,i){
    ============================================================ */
 let TP=[],tpu="",tpl=0,tph=1,tpTag="";
 async function onTrendShow(){
+  if(!$("trend-day").value)$("trend-day").value=today();
   if($("trend-sel").value==="")return;
   await loadTrend();
 }
 $("trend-sel").onchange=loadTrend;
 $("trend-reload").onclick=()=>loadTrend(true);
+$("trend-day").onchange=()=>loadTrend(true);
 
 async function loadTrend(force){
   const i=parseInt($("trend-sel").value||"0",10);
-  const c=await loadCsv(force===true);
+  const day=$("trend-day").value||today();
+  const c=await loadCsv(day,force===true);
   if(!c.rows||!c.rows.length){
-    TP=[];drawTrendEmpty("No stored samples for today yet.");
+    TP=[];drawTrendEmpty("No stored samples for "+day+".");
     $("trend-stats").textContent="";return;
   }
   TP=seriesFor(c.rows,i);
   tpu=(LIVE&&LIVE.ch[i])?LIVE.ch[i].unit:"";
   tpTag=(c.hdr&&c.hdr[1+2*i])?c.hdr[1+2*i]:(LIVE&&LIVE.ch[i]?LIVE.ch[i].tag:"");
-  if(!TP.length){drawTrendEmpty("No valid samples for this channel today.");
+  if(!TP.length){drawTrendEmpty("No valid samples for this channel on "+day+".");
     $("trend-stats").textContent="";return;}
   let lo=Math.min(...TP.map(p=>p.v)),hi=Math.max(...TP.map(p=>p.v));
   if(hi-lo<1e-6){lo-=1;hi+=1;}
@@ -647,16 +651,18 @@ $("trend-cv").onmouseleave=()=>drawTrend(null);
 /* ============================================================
    POLAR (24h dial, midnight top, clockwise)
    ============================================================ */
-async function onPolarShow(){await loadPolar();}
+async function onPolarShow(){if(!$("polar-day").value)$("polar-day").value=today();await loadPolar();}
 $("polar-sel").onchange=loadPolar;
 $("polar-reload").onclick=()=>loadPolar(true);
+$("polar-day").onchange=()=>{tickPolarClock();loadPolar(true);};
 
 function minutesOfDay(fullHHMMSS){
   const p=fullHHMMSS.split(":");
   return (+p[0])*60+(+p[1])+(+(p[2]||0))/60;
 }
 async function loadPolar(force){
-  const c=await loadCsv(force===true);
+  const day=$("polar-day").value||today();
+  const c=await loadCsv(day,force===true);
   if(!c.rows||!c.rows.length){drawPolar(null);return;}
   drawPolar(c);
 }
@@ -1055,20 +1061,25 @@ window.addEventListener("resize",()=>{
    POLAR CENTRE CLOCK (live, ticks every second)
    ============================================================ */
 function tickPolarClock(){
-  const t=new Date(),p=n=>String(n).padStart(2,"0");
-  $("pol-t").textContent=`${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
-  $("pol-d").textContent=today();
+  const p=n=>String(n).padStart(2,"0"),tEl=$("pol-t");
+  const sel=($("polar-day")&&$("polar-day").value)||today();
+  if(sel===today()){const t=new Date();tEl.style.fontSize="27px";
+    tEl.textContent=`${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
+    $("pol-d").textContent=today();
+  }else{tEl.style.fontSize="18px";tEl.textContent=sel;$("pol-d").textContent="24-hour history";}
 }
 
 /* ============================================================
    BOOT
    ============================================================ */
+$("trend-day").value=$("trend-day").value||today();
+$("polar-day").value=$("polar-day").value||today();
 live();
 setInterval(live,1000);            // auto-refresh header/digital/bar every second
 tickPolarClock();
 setInterval(tickPolarClock,1000);
-// pull newly-logged samples into the polar dial while it is visible
-setInterval(()=>{if(curScreen==="polar")loadPolar(true);},10000);
+// pull newly-logged samples into the polar dial while it is visible (today only)
+setInterval(()=>{if(curScreen==="polar"&&(($("polar-day").value||today())===today()))loadPolar(true);},10000);
 </script>
 </body>
 </html>
