@@ -37,9 +37,11 @@ static const char *main_icons[M_COUNT] =
 static int main_map[M_COUNT];   /* visible row -> section id */
 
 /* Display submenu */
-typedef enum { D_THEME = 0, D_COLORS, D_COUNT } disp_sec_t;
-static const char *disp_names[D_COUNT] = { "Theme", "Channel colours" };
-static const char *disp_icons[D_COUNT] = { LV_SYMBOL_IMAGE, LV_SYMBOL_TINT };
+typedef enum { D_THEME = 0, D_COLORS, D_TREND, D_COUNT } disp_sec_t;
+static const char *disp_names[D_COUNT] =
+    { "Theme", "Channel colours", "Trend style" };
+static const char *disp_icons[D_COUNT] =
+    { LV_SYMBOL_IMAGE, LV_SYMBOL_TINT, LV_SYMBOL_LIST };
 
 /* Factory settings submenu */
 typedef enum {
@@ -3485,12 +3487,50 @@ static void main_item_cb(lv_event_t *e)
 
 static void build_theme_form(void);
 
+/* ---- Trend style (Display submenu) ---- */
+static lv_obj_t *dd_trendstyle, *lbl_tsres;
+
+static void trendstyle_save_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    g_cfg.trend_style = (int)lv_dropdown_get_selected(dd_trendstyle);
+    config_save();
+    event_log("CONFIG", "Trend style set to %s",
+              g_cfg.trend_style == 1 ? "line + values" : "line");
+    lv_label_set_text(lbl_tsres,
+        "Saved. Open the Trend screen to see the new layout.");
+    lv_obj_set_style_text_color(lbl_tsres, COL_ACCENT, 0);
+}
+
+static void build_trendstyle_form(void)
+{
+    dd_trendstyle = form_dd(form_row("Trend layout"),
+        "Line (full width)\nLine + values (graph + channel table)",
+        g_cfg.trend_style);
+    page_save_button(LV_SYMBOL_SAVE "  Save", trendstyle_save_cb);
+
+    lbl_tsres = lv_label_create(panel);
+    lv_label_set_text(lbl_tsres, "");
+    lv_obj_set_style_text_color(lbl_tsres, COL_MUTED, 0);
+    lv_obj_set_style_text_font(lbl_tsres, &font_units_14, 0);
+
+    lv_obj_t *note = lv_label_create(panel);
+    lv_label_set_text(note,
+        "Line + values shrinks the graph and shows each channel's live"
+        " value with min / max / average beside it, like the polar screen.");
+    lv_obj_set_style_text_color(note, COL_MUTED, 0);
+    lv_obj_set_style_text_font(note, &font_units_12, 0);
+    lv_obj_set_width(note, LV_PCT(100));
+    lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
+}
+
 static void disp_item_cb(lv_event_t *e)
 {
     disp_sec_t s = (disp_sec_t)(intptr_t)lv_event_get_user_data(e);
     page_open(disp_icons[s], disp_names[s], 2);
     if (s == D_COLORS) build_colors_form();
     if (s == D_THEME)  build_theme_form();
+    if (s == D_TREND)  build_trendstyle_form();
 }
 
 /* hardware-restart confirmation over the Factory settings list */

@@ -9,6 +9,7 @@
 #include "ui.h"
 #include "data_model.h"
 #include "history.h"
+#include "config.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -41,6 +42,7 @@ static char  gunit[8];
 
 static float disp_eng[CH_PER_GROUP][DISP_MAX];
 static float disp_frac[CH_PER_GROUP][DISP_MAX];
+static uint8_t have[CH_PER_GROUP][DISP_MAX];   /* sample present at point i */
 
 static lv_obj_t *chart, *yscale, *lbl_date, *lbl_read, *lbl_zoom;
 static lv_obj_t *lbl_x[7];
@@ -48,7 +50,55 @@ static lv_obj_t *btn_leg[CH_PER_GROUP];
 static lv_obj_t *btn_yscale;
 static lv_obj_t *pen_dot[CH_PER_GROUP];
 static lv_chart_series_t *series[CH_PER_GROUP];
+static lv_obj_t *vpanel, *vlbl[CH_PER_GROUP];   /* right-side values panel */
 static bool built;
+
+/* chart width depends on the trend style (line = full, line+values =
+ * leaves room for the values panel on the right) */
+#define VP_W 250
+static int chart_w(void)
+{
+    return (g_cfg.trend_style == 1) ? (800 - 64 - 8 - (VP_W + 8))
+                                    : (800 - 64 - 8);
+}
+
+/* min / max / avg over the visible window + live "now", per channel */
+static void values_update(void)
+{
+    if (!vpanel || g_cfg.trend_style != 1) return;
+    int P = disp_pts > 0 ? disp_pts : 1;
+    int base = ui_group() * CH_PER_GROUP;
+    for (int c = 0; c < CH_PER_GROUP; c++) {
+        if (!vlbl[c]) continue;
+        float mn = 0, mx = 0, sum = 0; int n = 0;
+        for (int i = 0; i < P; i++) {
+            if (!have[c][i]) continue;
+            float v = disp_eng[c][i];
+            if (!n) { mn = mx = v; }
+            if (v < mn) mn = v; if (v > mx) mx = v;
+            sum += v; n++;
+        }
+        data_lock();
+        char tag[12], unit[8];
+        lv_snprintf(tag, sizeof(tag), "%s", g_ch[base + c].tag);
+        lv_snprintf(unit, sizeof(unit), "%s", g_ch[base + c].unit);
+        ch_status_t st = g_ch[base + c].status;
+        float now = g_ch[base + c].value;
+        data_unlock();
+        int ok = (st == CH_OK || st == CH_ALM_HI || st == CH_ALM_LO);
+        char nowbuf[20];
+        if (ok) lv_snprintf(nowbuf, sizeof(nowbuf), "%.1f %s", (double)now, unit);
+        else    lv_snprintf(nowbuf, sizeof(nowbuf), "--");
+        if (n)
+            lv_label_set_text_fmt(vlbl[c],
+                "CH%d %s   %s\nmin %.1f  max %.1f  avg %.1f",
+                base + c + 1, tag, nowbuf,
+                (double)mn, (double)mx, (double)(sum / (float)n));
+        else
+            lv_label_set_text_fmt(vlbl[c], "CH%d %s   %s\nno data",
+                                  base + c + 1, tag, nowbuf);
+    }
+}
 
 static int cur_wsec(void)
 {
@@ -137,7 +187,6 @@ static void redraw_window(void)
     time_t live_lo = now - LIVE_SECS + 1;
 
     /* pass 1: engineering values + visible min/max for auto range */
-    static uint8_t have[CH_PER_GROUP][DISP_MAX];
     float vmin = 0, vmax = 0;
     int   vany = 0;
 
@@ -238,6 +287,7 @@ static void redraw_window(void)
 
     lv_chart_refresh(chart);
     pen_update();
+    values_update();
 }
 
 static void load_day(void)
@@ -450,7 +500,7 @@ void scr_trend_build(lv_obj_t *parent)
 
     /* ---- chart ---- */
     chart = lv_chart_create(parent);
-    lv_obj_set_size(chart, 800 - 64 - 8, chart_h);
+    lv_obj_set_size(chart, chart_w(), chart_h);
     lv_obj_align(chart, LV_ALIGN_TOP_LEFT, 64, 44);
     lv_obj_set_style_bg_color(chart, COL_PANEL, 0);
     lv_obj_set_style_border_color(chart, COL_BORDER, 0);
@@ -480,9 +530,46 @@ void scr_trend_build(lv_obj_t *parent)
         pen_dot[i] = d;
     }
 
+    /* ---- values panel (Trend style: line + values) ---- */
+    vpanel = NULL;
+    for (int i = 0; i < CH_PER_GROUP; i++) vlbl[i] = NULL;
+    if (g_cfg.trend_style == 1) {
+        vpanel = lv_obj_create(parent);
+        lv_obj_set_size(vpanel, VP_W, chart_h);
+        lv_obj_align(vpanel, LV_ALIGN_TOP_LEFT, 64 + chart_w() + 8, 44);
+        lv_obj_set_style_bg_color(vpanel, COL_PANEL, 0);
+        lv_obj_set_style_border_color(vpanel, COL_BORDER, 0);
+        lv_obj_set_style_border_width(vpanel, 1, 0);
+        lv_obj_set_style_radius(vpanel, 6, 0);
+        lv_obj_set_style_pad_all(vpanel, 4, 0);
+        lv_obj_set_flex_flow(vpanel, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(vpanel, 3, 0);
+        lv_obj_remove_flag(vpanel, LV_OBJ_FLAG_SCROLLABLE);
+        for (int i = 0; i < CH_PER_GROUP; i++) {
+            lv_obj_t *row = lv_obj_create(vpanel);
+            lv_obj_set_width(row, LV_PCT(100));
+            lv_obj_set_flex_grow(row, 1);
+            lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_side(row, LV_BORDER_SIDE_LEFT, 0);
+            lv_obj_set_style_border_color(row,
+                lv_color_hex(series_colors[i]), 0);
+            lv_obj_set_style_border_width(row, 4, 0);
+            lv_obj_set_style_radius(row, 0, 0);
+            lv_obj_set_style_pad_left(row, 8, 0);
+            lv_obj_set_style_pad_ver(row, 1, 0);
+            lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_t *l = lv_label_create(row);
+            lv_label_set_text(l, "");
+            lv_obj_set_style_text_font(l, &font_units_12, 0);
+            lv_obj_set_style_text_color(l, COL_TEXT, 0);
+            lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
+            vlbl[i] = l;
+        }
+    }
+
     /* ---- X labels ---- */
     lv_obj_t *xrow = lv_obj_create(parent);
-    lv_obj_set_size(xrow, 800 - 64 - 8, 22);
+    lv_obj_set_size(xrow, chart_w(), 22);
     lv_obj_align(xrow, LV_ALIGN_BOTTOM_LEFT, 64, 0);
     lv_obj_set_style_bg_opa(xrow, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(xrow, 0, 0);

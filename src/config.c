@@ -36,6 +36,7 @@ static void set_defaults(void)
     g_cfg.theme        = 0;
     g_cfg.color_mode   = 0;
     g_cfg.single_color = 0;
+    g_cfg.trend_style  = 0;
     for (int i = 0; i < 40; i++) g_cfg.ch_color[i] = i % 8;
 
     g_cfg.tcp_enable = 1;
@@ -114,6 +115,7 @@ void config_load(void)
             else if (!strcmp(key, "theme"))          g_cfg.theme = atoi(val);
             else if (!strcmp(key, "color_mode"))     g_cfg.color_mode = atoi(val);
             else if (!strcmp(key, "single_color"))   g_cfg.single_color = atoi(val);
+            else if (!strcmp(key, "trend_style"))    g_cfg.trend_style = atoi(val);
             else if (!strcmp(key, "tcp_enable"))     g_cfg.tcp_enable = atoi(val);
             else if (!strcmp(key, "tcp_port"))       g_cfg.tcp_port = atoi(val);
             else if (!strcmp(key, "tcp_unit"))       g_cfg.tcp_unit = atoi(val);
@@ -261,6 +263,7 @@ void config_save(void)
     fprintf(f, "theme=%d\n",        g_cfg.theme);
     fprintf(f, "color_mode=%d\n",   g_cfg.color_mode);
     fprintf(f, "single_color=%d\n", g_cfg.single_color);
+    fprintf(f, "trend_style=%d\n",  g_cfg.trend_style);
     for (int i = 0; i < 40; i++)
         fprintf(f, "ch_color%d=%d\n", i, g_cfg.ch_color[i]);
 

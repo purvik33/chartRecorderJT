@@ -37,6 +37,7 @@ typedef struct {
     int  theme;           /* product colour theme index */
     int  color_mode;      /* 0 = multi-colour per channel, 1 = single */
     int  single_color;    /* palette index used in single mode */
+    int  trend_style;     /* 0 = line (full width), 1 = line + values panel */
     int  ch_color[40];    /* palette index per channel (all cards) */
 
     /* network / Modbus TCP server */
