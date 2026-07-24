@@ -335,7 +335,7 @@ int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen)
             time_t t = parse_row_time(line);
             if (t == (time_t)-1 || t < t0 || t > t1) continue;
             rc_rstrip(line);
-            int nf = rc_split(line, f, 1 + 2 * nch);
+            int nf = rc_split(line, f, 1 + 2 * RC_MAXCH);
             for (int i = 0; i < nch; i++) {
                 int sc = 2 + 2 * i; if (sc >= nf) break;
                 if (!rc_isnum(f[sc])) continue;
@@ -366,7 +366,7 @@ int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen)
             if (t == (time_t)-1 || t < t0 || t > t1) continue;
             if ((ri++ % stepc) != 0) continue;
             rc_rstrip(line);
-            int nf = rc_split(line, f, 1 + 2 * nch);
+            int nf = rc_split(line, f, 1 + 2 * RC_MAXCH);
             rc_cx[cn] = (float)(((double)(t - t0)) / span);
             for (int i = 0; i < nch; i++) {
                 int sc = 2 + 2 * i;
@@ -420,7 +420,7 @@ int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen)
     y = rc_inforow(pd, M, PW - M, y, "Generated", gen, "Days", dbuf);
     y = rc_inforow(pd, M, PW - M, y, "Period", per, NULL, NULL);
 
-    y += 6;
+    y += 18;
     pdf_text(pd, M, y, 12, 1, 13, 27, 42, "Summary"); y += 14;
     pdf_fill(pd, M, y, PW - 2 * M, 16, 238, 243, 247);
     pdf_text(pd, M + 2, y + 11, 8, 1, 13, 27, 42, "Ch");
@@ -522,7 +522,8 @@ int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen)
         }
         fclose(in);
         if (drows == 0) continue;
-        long dstep = drows / 240; if (dstep < 1) dstep = 1;
+        /* cap each day at ~3 pages (108 rows) so the report stays compact */
+        long dstep = (drows + 107) / 108; if (dstep < 1) dstep = 1;
 
         in = fopen(path, "r"); if (!in) continue;
         int rowc = 0, page_open = 0; long idx = 0; float ry = 0;
@@ -552,7 +553,7 @@ int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen)
             snprintf(tbuf, sizeof(tbuf), "%02d:%02d:%02d",
                      rt.tm_hour, rt.tm_min, rt.tm_sec);
             rc_rstrip(line);
-            int nf = rc_split(line, f, 1 + 2 * nch);
+            int nf = rc_split(line, f, 1 + 2 * RC_MAXCH);
             pdf_text(pd, M + 2, ry + 10, fs, 0, 60, 60, 60, tbuf);
             for (int i = 0; i < nch; i++) {
                 int sc = 2 + 2 * i; char cell[12];
