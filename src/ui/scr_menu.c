@@ -1622,6 +1622,21 @@ static void export_events_cb(lv_event_t *e)
     export_common(2);
 }
 
+static void export_report_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    char msg[160];
+    lv_label_set_text(lbl_result, "Generating PDF report...");
+    lv_obj_set_style_text_color(lbl_result, COL_MUTED, 0);
+    lv_refr_now(NULL);   /* show the progress note before the (blocking) build */
+    int rc = export_report_pdf(exp_t0, exp_t1 + 59, msg, sizeof(msg));
+    if (rc > 0) event_log("EXPORT", "PDF report - %s", msg);
+    lv_label_set_text(lbl_result, msg);
+    lv_obj_set_style_text_color(lbl_result,
+                                rc > 0 ? COL_ACCENT : COL_ALARM_TXT, 0);
+    usb_status_update();
+}
+
 /* absolute-position helpers for the single-screen export page */
 static lv_obj_t *exp_btn(int x, int y, int w, const char *txt,
                          lv_event_cb_t cb, bool primary)
@@ -1687,14 +1702,16 @@ static void build_export_form(void)
 
     /* ---- right: what to export ---- */
     exp_lbl(410, 0, "Write to USB stick");
-    exp_btn(410, 28, 330, LV_SYMBOL_USB "  PV data", export_cb, true);
-    exp_btn(410, 88, 330, LV_SYMBOL_BELL "  Alarm history",
-            export_alarms_cb, true);
-    exp_btn(410, 148, 330, LV_SYMBOL_FILE "  Event log",
-            export_events_cb, true);
+    exp_btn(410, 24, 330, LV_SYMBOL_SAVE "  PDF report", export_report_cb, true);
+    exp_btn(410, 78, 330, LV_SYMBOL_USB "  PV data (CSV)", export_cb, false);
+    exp_btn(410, 132, 330, LV_SYMBOL_BELL "  Alarm history (CSV)",
+            export_alarms_cb, false);
+    exp_btn(410, 186, 330, LV_SYMBOL_FILE "  Event log (CSV)",
+            export_events_cb, false);
 
-    lv_obj_t *note = exp_lbl(410, 210,
-        "Tap Start or End to pick date and\ntime from the calendar");
+    lv_obj_t *note = exp_lbl(410, 240,
+        "PDF report matches the web dashboard: summary,\n"
+        "trend chart, per-day readings and 21 CFR signatures.");
     lv_obj_set_style_text_font(note, &font_units_12, 0);
 }
 

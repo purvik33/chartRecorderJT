@@ -38,6 +38,7 @@ add_executable(recorder_ui
     src/update.c
     src/webserver.c
     src/export.c
+    src/pdf.c
     src/events.c
     src/history.c
     src/ui/ui.c

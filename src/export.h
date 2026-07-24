@@ -19,4 +19,9 @@ int export_alarms_range(time_t t0, time_t t1, char *msg, size_t msglen);
 /* same, for the system event log (logs/events-*.csv) */
 int export_events_range(time_t t0, time_t t1, char *msg, size_t msglen);
 
+/* generate a professional PDF report (letterhead, per-channel summary,
+ * trend chart, per-day readings, 21 CFR Part 11 signature block) for the
+ * range and write it to the USB drive. Returns record count, -1 on error. */
+int export_report_pdf(time_t t0, time_t t1, char *msg, size_t msglen);
+
 #endif
