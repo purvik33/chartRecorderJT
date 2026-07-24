@@ -116,6 +116,51 @@ void ui_ch_visible_toggle(int pos)
 lv_obj_t *ui_content(void) { return content; }
 int ui_group(void) { return cur_group; }
 
+/* ---- floating pop-up notification (toast) ------------------------------ */
+
+static void toast_close_cb(lv_timer_t *t)
+{
+    lv_obj_t *o = (lv_obj_t *)lv_timer_get_user_data(t);
+    if (o && lv_obj_is_valid(o)) lv_obj_delete(o);
+    lv_timer_delete(t);
+}
+
+void ui_toast(const char *msg, int is_error)
+{
+    lv_obj_t *box = lv_obj_create(lv_layer_top());
+    lv_obj_set_style_bg_color(box, is_error ? COL_ALARM : COL_PANEL, 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(box, is_error ? COL_ALARM : COL_ACCENT, 0);
+    lv_obj_set_style_border_width(box, 2, 0);
+    lv_obj_set_style_radius(box, 12, 0);
+    lv_obj_set_style_pad_all(box, 16, 0);
+    lv_obj_set_style_shadow_width(box, 28, 0);
+    lv_obj_set_style_shadow_opa(box, LV_OPA_40, 0);
+    lv_obj_set_width(box, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_width(box, 720, 0);
+    lv_obj_set_height(box, LV_SIZE_CONTENT);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *ic = lv_label_create(box);
+    lv_label_set_text(ic, is_error ? LV_SYMBOL_WARNING : LV_SYMBOL_OK);
+    lv_obj_set_style_text_color(ic, is_error ? lv_color_white() : COL_ACCENT, 0);
+    lv_obj_set_style_text_font(ic, &font_units_16, 0);
+    lv_obj_align(ic, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_t *l = lv_label_create(box);
+    lv_label_set_text(l, msg);
+    lv_obj_set_style_text_color(l, is_error ? lv_color_white() : COL_TEXT, 0);
+    lv_obj_set_style_text_font(l, &font_units_16, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(l, 640);
+    lv_obj_align(l, LV_ALIGN_LEFT_MID, 30, 0);
+
+    lv_obj_align(box, LV_ALIGN_BOTTOM_MID, 0, -34);
+
+    lv_timer_t *t = lv_timer_create(toast_close_cb, 3200, box);
+    lv_timer_set_repeat_count(t, 1);
+}
+
 int ui_group_count(void)
 {
     if (g_cfg.source == SRC_MODBUS &&

@@ -51,6 +51,10 @@ void ui_reload(void);
 /* Container the active view builds itself into (below status bar, above nav) */
 lv_obj_t *ui_content(void);
 
+/* floating pop-up notification (auto-dismisses). is_error tints it red.
+ * Usable from anywhere in the UI thread. */
+void ui_toast(const char *msg, int is_error);
+
 /* Currently displayed channel group, 0..GROUP_COUNT-1 */
 int  ui_group(void);
 

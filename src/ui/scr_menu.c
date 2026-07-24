@@ -1626,6 +1626,7 @@ static void export_common(int alarms)
     lv_label_set_text(lbl_result, msg);
     lv_obj_set_style_text_color(lbl_result,
                                 rc > 0 ? COL_ACCENT : COL_ALARM_TXT, 0);
+    ui_toast(msg, rc <= 0);
     usb_status_update();
 }
 
@@ -1659,6 +1660,7 @@ static void export_report_cb(lv_event_t *e)
     lv_label_set_text(lbl_result, msg);
     lv_obj_set_style_text_color(lbl_result,
                                 rc > 0 ? COL_ACCENT : COL_ALARM_TXT, 0);
+    ui_toast(msg, rc <= 0);
     usb_status_update();
 }
 
@@ -1673,6 +1675,7 @@ static void export_verify_cb(lv_event_t *e)
     lv_label_set_text(lbl_result, msg);
     lv_obj_set_style_text_color(lbl_result,
                                 rc == 0 ? COL_ACCENT : COL_ALARM_TXT, 0);
+    ui_toast(msg, rc != 0);
 }
 
 /* absolute-position helpers for the single-screen export page */

@@ -32,8 +32,24 @@ int usb_find(char *out, size_t n)
 #else
 #include <dirent.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
-/* USB sticks appear under /media/<user>/<label> or /run/media/... */
+/* a path is a mount point when its device id differs from its parent's -
+ * i.e. a real filesystem (a USB stick) is actually mounted there, not just
+ * an empty auto-mount directory like /media/<user>. This is what stops a
+ * write "succeeding" to internal storage when no USB is inserted. */
+static int is_mountpoint(const char *path)
+{
+    struct stat s, p;
+    char parent[300];
+    if (stat(path, &s) != 0) return 0;
+    snprintf(parent, sizeof(parent), "%s/..", path);
+    if (stat(parent, &p) != 0) return 0;
+    return s.st_dev != p.st_dev;
+}
+
+/* find a writable, actually-mounted removable volume under base; recurse
+ * one level so /media -> /media/<user> -> /media/<user>/<label> works */
 static int scan_mounts(const char *base, char *out, size_t n, int depth)
 {
     DIR *d = opendir(base);
@@ -41,14 +57,14 @@ static int scan_mounts(const char *base, char *out, size_t n, int depth)
     struct dirent *e;
     while ((e = readdir(d)) != NULL) {
         if (e->d_name[0] == '.') continue;
-        char path[256];
+        char path[300];
         snprintf(path, sizeof(path), "%s/%s", base, e->d_name);
-        if (depth > 0 && scan_mounts(path, out, n, depth - 1)) {
+        if (is_mountpoint(path) && access(path, W_OK) == 0) {
+            snprintf(out, n, "%s/", path);
             closedir(d);
             return 1;
         }
-        if (depth == 0 && access(path, W_OK) == 0) {
-            snprintf(out, n, "%s/", path);
+        if (depth > 0 && scan_mounts(path, out, n, depth - 1)) {
             closedir(d);
             return 1;
         }
@@ -61,7 +77,6 @@ int usb_find(char *out, size_t n)
 {
     if (scan_mounts("/media", out, n, 1))     return 1;
     if (scan_mounts("/run/media", out, n, 1)) return 1;
-    if (scan_mounts("/media", out, n, 0))     return 1;
     return 0;
 }
 #endif
@@ -85,7 +100,7 @@ int export_range(time_t t0, time_t t1, char *msg, size_t msglen)
 
     char usb[128];
     if (!usb_find(usb, sizeof(usb))) {
-        snprintf(msg, msglen, "No USB drive found");
+        snprintf(msg, msglen, "USB drive not connected");
         return -1;
     }
 
@@ -141,7 +156,7 @@ int export_events_range(time_t t0, time_t t1, char *msg, size_t msglen)
 
     char usb[128];
     if (!usb_find(usb, sizeof(usb))) {
-        snprintf(msg, msglen, "No USB drive found");
+        snprintf(msg, msglen, "USB drive not connected");
         return -1;
     }
 
@@ -199,7 +214,7 @@ int export_alarms_range(time_t t0, time_t t1, char *msg, size_t msglen)
 
     char usb[128];
     if (!usb_find(usb, sizeof(usb))) {
-        snprintf(msg, msglen, "No USB drive found");
+        snprintf(msg, msglen, "USB drive not connected");
         return -1;
     }
 
