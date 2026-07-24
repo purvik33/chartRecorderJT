@@ -569,13 +569,17 @@ function seriesFor(rows,i){
    ============================================================ */
 let TP=[],tpu="",tpl=0,tph=1,tpTag="";
 async function onTrendShow(){
+  await ensureDays();
   if(!$("trend-day").value)$("trend-day").value=today();
+  if(dayList&&dayList.length&&!dayList.includes($("trend-day").value))
+    $("trend-day").value=nearestDay($("trend-day").value);
   if($("trend-sel").value==="")return;
   await loadTrend();
 }
 $("trend-sel").onchange=loadTrend;
 $("trend-reload").onclick=()=>loadTrend(true);
-$("trend-day").onchange=()=>loadTrend(true);
+$("trend-day").onchange=()=>{const d=nearestDay($("trend-day").value);
+  if(d!==$("trend-day").value)$("trend-day").value=d;loadTrend(true);};
 
 async function loadTrend(force){
   const i=parseInt($("trend-sel").value||"0",10);
@@ -651,10 +655,18 @@ $("trend-cv").onmouseleave=()=>drawTrend(null);
 /* ============================================================
    POLAR (24h dial, midnight top, clockwise)
    ============================================================ */
-async function onPolarShow(){if(!$("polar-day").value)$("polar-day").value=today();await loadPolar();}
+async function onPolarShow(){
+  await ensureDays();
+  if(!$("polar-day").value)$("polar-day").value=today();
+  if(dayList&&dayList.length&&!dayList.includes($("polar-day").value))
+    $("polar-day").value=nearestDay($("polar-day").value);
+  tickPolarClock();
+  await loadPolar();
+}
 $("polar-sel").onchange=loadPolar;
 $("polar-reload").onclick=()=>loadPolar(true);
-$("polar-day").onchange=()=>{tickPolarClock();loadPolar(true);};
+$("polar-day").onchange=()=>{const d=nearestDay($("polar-day").value);
+  if(d!==$("polar-day").value)$("polar-day").value=d;tickPolarClock();loadPolar(true);};
 
 function minutesOfDay(fullHHMMSS){
   const p=fullHHMMSS.split(":");
@@ -804,15 +816,33 @@ function fillSettings(){
    DATA — download logged CSV by date range (like the logger export)
    ============================================================ */
 let dayList=null;   // sorted YYYY-MM-DD strings that have process data
-async function loadData(){
+async function ensureDays(){
   if(!dayList){
     try{const r=await fetch("/api/days");dayList=r.ok?await r.json():[];}
     catch(e){dayList=[];}
     dayList.sort();
-    // default the range to the full span of available data (fallback: today)
-    $("dl-from").value=dayList[0]||today();
-    $("dl-to").value=dayList[dayList.length-1]||today();
+    applyDayLimits();
   }
+  return dayList;
+}
+// constrain every date picker to the range of days that actually have data
+function applyDayLimits(){
+  if(!dayList||!dayList.length)return;
+  const lo=dayList[0],hi=dayList[dayList.length-1];
+  ["trend-day","polar-day","dl-from","dl-to","dl-search"].forEach(id=>{
+    const el=$(id);if(el&&el.type==="date"){el.min=lo;el.max=hi;}});
+}
+// nearest logged day to a chosen date (so gaps snap to real data)
+function nearestDay(d){
+  if(!dayList||!dayList.length||dayList.includes(d))return d;
+  let best=dayList[0],bd=Infinity,t=Date.parse(d);
+  dayList.forEach(x=>{const dd=Math.abs(Date.parse(x)-t);if(dd<bd){bd=dd;best=x;}});
+  return best;
+}
+async function loadData(){
+  await ensureDays();
+  if(!$("dl-from").value)$("dl-from").value=dayList[0]||today();
+  if(!$("dl-to").value)$("dl-to").value=dayList[dayList.length-1]||today();
   renderData();
 }
 function daysInRange(){
@@ -1074,6 +1104,7 @@ function tickPolarClock(){
    ============================================================ */
 $("trend-day").value=$("trend-day").value||today();
 $("polar-day").value=$("polar-day").value||today();
+ensureDays();   // fetch available days -> sets min/max limits on the date pickers
 live();
 setInterval(live,1000);            // auto-refresh header/digital/bar every second
 tickPolarClock();
