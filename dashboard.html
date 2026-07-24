@@ -142,6 +142,14 @@ canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line
   border-radius:8px;}
 #trend-cv{height:400px}
 #polar-cv{height:460px}
+/* trend layout styles (Settings > Trend style) */
+.tgraph{width:100%}
+#trend-values{display:none}
+#trend-card.tv{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+#trend-card.tv .tgraph{flex:1 1 380px;min-width:0}
+#trend-card.tv #trend-values{display:block;flex:1 1 260px;min-width:240px}
+#trend-values .tbl-wrap{width:100%}
+@media(max-width:640px){#trend-card.tv .tgraph{flex-basis:100%}}
 #polar-clock{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   text-align:center;pointer-events:none;line-height:1.15;padding:16px 22px;
   border-radius:50%;
@@ -297,9 +305,12 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
         <select id="trend-sel"></select>
         <button class="btn" id="trend-reload">Reload</button>
       </div>
-      <div class="card-box">
-        <div class="cvw"><canvas id="trend-cv"></canvas><div id="tip"></div></div>
-        <div class="stats" id="trend-stats">Select a channel.</div>
+      <div class="card-box" id="trend-card">
+        <div class="tgraph">
+          <div class="cvw"><canvas id="trend-cv"></canvas><div id="tip"></div></div>
+          <div class="stats" id="trend-stats">Select a channel.</div>
+        </div>
+        <div id="trend-values"></div>
       </div>
     </section>
 
@@ -353,14 +364,26 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
     <!-- SETTINGS -->
     <section class="screen" id="s-settings">
       <div class="scr-head"><h2>Settings</h2>
-        <span class="sub">Read-only</span></div>
+        <span class="sub">Display &amp; status</span></div>
+      <h2 class="hint">Display</h2>
+      <div class="ctl-row">
+        <label class="dl-lbl">Trend style
+          <select id="set-trendstyle">
+            <option value="line">Line (full width)</option>
+            <option value="values">Line + values (graph left, table right)</option>
+            <option value="vertical">Vertical (time top&rarr;bottom)</option>
+          </select>
+        </label>
+      </div>
+      <h2 class="hint">Status</h2>
       <div class="set-grid">
         <div class="set-card"><div class="k">Firmware</div><div class="v" id="set-fw">&mdash;</div></div>
         <div class="set-card"><div class="k">Current group</div><div class="v" id="set-grp">&mdash;</div></div>
         <div class="set-card"><div class="k">Channels</div><div class="v" id="set-ch">&mdash;</div></div>
         <div class="set-card"><div class="k">RS-485 link</div><div class="v" id="set-link">&mdash;</div></div>
       </div>
-      <div class="note">Configuration editing from the browser is not enabled yet (read-only).</div>
+      <div class="note">Trend style is saved in this browser. Other configuration
+        editing from the browser is not enabled yet.</div>
     </section>
   </main>
 </div>
@@ -379,6 +402,7 @@ let digCards=[];       // digital DOM tiles
 let barRows=[];        // bar DOM rows
 let curScreen="digital";
 let selBuilt=false;
+let trendStyle=localStorage.getItem("trendStyle")||"line";  // line | values | vertical
 
 /* ---------- day string ---------- */
 function today(){
@@ -588,6 +612,7 @@ function seriesFor(rows,i){
 let TP=[],tpu="",tpl=0,tph=1,tpTag="";
 async function onTrendShow(){
   await ensureDays();
+  $("trend-card").classList.toggle("tv",trendStyle==="values");
   if(!$("trend-day").value)$("trend-day").value=today();
   if(dayList&&dayList.length&&!dayList.includes($("trend-day").value))
     $("trend-day").value=nearestDay($("trend-day").value);
@@ -603,6 +628,7 @@ async function loadTrend(force){
   const i=parseInt($("trend-sel").value||"0",10);
   const day=$("trend-day").value||today();
   const c=await loadCsv(day,force===true);
+  if(trendStyle==="values")buildTrendValues(c);
   if(!c.rows||!c.rows.length){
     TP=[];drawTrendEmpty("No stored samples for "+day+".");
     $("trend-stats").textContent="";return;
@@ -637,6 +663,7 @@ function drawTrend(hov){
   cv.width=W*r;cv.height=H*r;const x=cv.getContext("2d");x.scale(r,r);
   x.clearRect(0,0,W,H);
   if(!TP.length){drawTrendEmpty("No data.");return;}
+  if(trendStyle==="vertical"){drawTrendVert(x,W,H);return;}
   const L=60,R=18,T=18,B=36,pw=W-L-R,ph=H-T-B,n=TP.length;
   x.strokeStyle="#24405c";x.fillStyle="#8fa3b8";x.font="12px system-ui";x.lineWidth=1;
   for(let k=0;k<=4;k++){const y=T+ph*k/4,v=tph-(tph-tpl)*k/4;
@@ -662,6 +689,56 @@ function drawTrend(hov){
     tip.style.top=(py<70?py+16:py-40)+"px";
   }else $("tip").style.display="none";
 }
+/* vertical style: time runs top->bottom, value across (paper-recorder look) */
+function drawTrendVert(x,W,H){
+  const L=56,R=18,T=26,B=22,pw=W-L-R,ph=H-T-B,n=TP.length;
+  $("tip").style.display="none";
+  x.strokeStyle="#24405c";x.fillStyle="#8fa3b8";x.font="12px system-ui";x.lineWidth=1;
+  for(let k=0;k<=4;k++){const px=L+pw*k/4,v=tpl+(tph-tpl)*k/4;
+    x.beginPath();x.moveTo(px,T);x.lineTo(px,T+ph);x.stroke();
+    x.textAlign="center";x.fillText(v.toFixed(1),px,T-8);}
+  x.textAlign="right";
+  for(let k=0;k<=6;k++){const idx=Math.round((n-1)*k/6);
+    if(TP[idx])x.fillText(TP[idx].t,L-8,T+ph*k/6+4);}
+  x.strokeStyle="#4fc3f7";x.lineWidth=2;x.beginPath();
+  TP.forEach((p,k)=>{const py=T+ph*k/Math.max(1,n-1),
+    px=L+pw*(p.v-tpl)/(tph-tpl);k?x.lineTo(px,py):x.moveTo(px,py);});
+  x.stroke();
+}
+/* right-side channel values table (logger style) for the 'values' layout */
+function buildTrendValues(c){
+  const nc=(LIVE&&LIVE.ch)?LIVE.ch.length:0;
+  let rows="";
+  for(let i=0;i<nc;i++){
+    const s=(c&&c.rows)?seriesFor(c.rows,i):[];
+    const tag=(LIVE&&LIVE.ch[i])?LIVE.ch[i].tag:"";
+    const unit=(LIVE&&LIVE.ch[i])?LIVE.ch[i].unit:"";
+    let mn="–",mx="–",av="–";
+    if(s.length){const vs=s.map(p=>p.v);
+      mn=Math.min(...vs).toFixed(1);mx=Math.max(...vs).toFixed(1);
+      av=(vs.reduce((a,b)=>a+b,0)/vs.length).toFixed(1);}
+    const cur=(LIVE&&LIVE.ch[i]&&isNum(LIVE.ch[i].status))
+      ?LIVE.ch[i].value.toFixed(1):"–";
+    rows+=`<tr><td class="sw"><i style="background:${POLC[i%POLC.length]}"></i></td>`+
+      `<td class="l">CH${i+1} <b>${tag}</b></td><td>${cur}</td>`+
+      `<td>${mn}</td><td>${mx}</td><td><b>${av}</b></td><td class="u">${unit}</td></tr>`;
+  }
+  $("trend-values").innerHTML=nc
+    ?`<div class="tbl-wrap"><table class="ptbl"><thead><tr><th></th>`+
+     `<th class="l">Channel</th><th>Now</th><th>Min</th><th>Max</th>`+
+     `<th>Avg</th><th class="l">Unit</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    :"";
+}
+function applyTrendStyle(){
+  $("trend-card").classList.toggle("tv",trendStyle==="values");
+  if(curScreen==="trend")loadTrend();
+}
+$("set-trendstyle").value=trendStyle;
+$("set-trendstyle").onchange=()=>{
+  trendStyle=$("set-trendstyle").value;
+  localStorage.setItem("trendStyle",trendStyle);
+  applyTrendStyle();
+};
 $("trend-cv").onmousemove=e=>{
   if(!TP.length)return;
   const rc=$("trend-cv").getBoundingClientRect(),L=60,pw=rc.width-60-18;
