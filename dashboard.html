@@ -153,6 +153,14 @@ canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line
 .pleg span{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;
   color:var(--ink)}
 .pleg i{width:11px;height:11px;border-radius:3px;display:inline-block;flex:0 0 auto}
+/* ---------- Data / download ---------- */
+.dl-lbl{display:inline-flex;align-items:center;gap:8px;color:var(--mut);font-size:13.5px}
+input[type=date]{background:var(--card2);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:7px 10px;font-size:14px;font-family:inherit;color-scheme:dark}
+input[type=date]:hover{border-color:var(--acc)}
+.dl-tbl a{color:var(--acc);text-decoration:none;font-weight:600}
+.dl-tbl a:hover{text-decoration:underline}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#07131f;font-weight:600}
 #tip{position:absolute;display:none;background:#1d3550;border:1px solid var(--acc);
   border-radius:6px;padding:5px 10px;font-size:13px;pointer-events:none;
   white-space:nowrap;font-variant-numeric:tabular-nums;z-index:5}
@@ -241,6 +249,9 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
     <div class="nav-item" data-scr="alarm">
       <span class="ic"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
       <span>Alarm</span><span class="nav-badge" id="nav-alm">0</span></div>
+    <div class="nav-item" data-scr="data">
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span>
+      <span>Data</span></div>
     <div class="nav-spacer"></div>
     <div class="nav-item" data-scr="settings">
       <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
@@ -303,6 +314,19 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
       <div id="alm-body"></div>
     </section>
 
+    <!-- DATA -->
+    <section class="screen" id="s-data">
+      <div class="scr-head"><h2>Data</h2>
+        <span class="sub">Download logged data by date range</span></div>
+      <div class="ctl-row">
+        <label class="dl-lbl">From <input type="date" id="dl-from"></label>
+        <label class="dl-lbl">To <input type="date" id="dl-to"></label>
+        <button class="btn" id="dl-show">Show</button>
+        <button class="btn primary" id="dl-proc">Download range as CSV</button>
+      </div>
+      <div id="dl-body"></div>
+    </section>
+
     <!-- SETTINGS -->
     <section class="screen" id="s-settings">
       <div class="scr-head"><h2>Settings</h2>
@@ -357,6 +381,7 @@ function go(scr){
   if(scr==="polar")onPolarShow();
   if(scr==="alarm")loadAlarms();
   if(scr==="settings")fillSettings();
+  if(scr==="data")loadData();
 }
 /* mobile drawer */
 $("hamb").onclick=()=>{const n=$("nav");n.classList.toggle("open");
@@ -765,6 +790,74 @@ function fillSettings(){
     ?`<span style="color:var(--ok)">ONLINE</span>`
     :`<span style="color:var(--alm)">NO LINK</span>`;
 }
+
+/* ============================================================
+   DATA — download logged CSV by date range (like the logger export)
+   ============================================================ */
+let dayList=null;   // sorted YYYY-MM-DD strings that have process data
+async function loadData(){
+  if(!dayList){
+    try{const r=await fetch("/api/days");dayList=r.ok?await r.json():[];}
+    catch(e){dayList=[];}
+    dayList.sort();
+    // default the range to the full span of available data (fallback: today)
+    $("dl-from").value=dayList[0]||today();
+    $("dl-to").value=dayList[dayList.length-1]||today();
+  }
+  renderData();
+}
+function daysInRange(){
+  const from=$("dl-from").value, to=$("dl-to").value;
+  return (dayList||[]).filter(d=>(!from||d>=from)&&(!to||d<=to)).sort();
+}
+function renderData(){
+  const body=$("dl-body"), days=daysInRange();
+  if(!days.length){
+    body.innerHTML=`<div class="empty"><div class="big">&#128193;</div>`+
+      `No logged data in the selected range.</div>`;
+    return;
+  }
+  let h=`<div class="tbl-wrap"><table class="dl-tbl"><thead><tr>`+
+    `<th>Date</th><th>Process data</th><th>Alarms</th><th>Events</th></tr></thead><tbody>`;
+  days.forEach(d=>{
+    h+=`<tr><td>${d}</td>`+
+       `<td><a href="/logs/${d}.csv" download="${d}.csv">${d}.csv</a></td>`+
+       `<td><a href="/logs/alarms-${d}.csv" download="alarms-${d}.csv">download</a></td>`+
+       `<td><a href="/logs/events-${d}.csv" download="events-${d}.csv">download</a></td></tr>`;
+  });
+  h+=`</tbody></table></div>`;
+  body.innerHTML=h;
+}
+// concatenate every process CSV in the range into one file (single header)
+async function downloadRangeCSV(){
+  const days=daysInRange();
+  if(!days.length){alert("No data in the selected range.");return;}
+  const btn=$("dl-proc"), label=btn.textContent;
+  btn.textContent="Preparing…"; btn.disabled=true;
+  let out="", header=null, n=0;
+  for(const d of days){
+    try{
+      const r=await fetch(`/logs/${d}.csv`); if(!r.ok)continue;
+      const txt=(await r.text()).trim(); if(!txt)continue;
+      const lines=txt.split("\n"); const hd=lines.shift();
+      if(header===null){header=hd; out=hd+"\n";}
+      if(lines.length){out+=lines.join("\n")+"\n";}
+      n++;
+    }catch(e){}
+  }
+  btn.textContent=label; btn.disabled=false;
+  if(!n){alert("No process-data files found in the selected range.");return;}
+  const from=$("dl-from").value, to=$("dl-to").value;
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([out],{type:"text/csv"}));
+  a.download=(from===to)?`process_${from}.csv`:`process_${from}_to_${to}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+$("dl-show").onclick=renderData;
+$("dl-proc").onclick=downloadRangeCSV;
+$("dl-from").onchange=renderData;
+$("dl-to").onchange=renderData;
 
 /* ============================================================
    RESIZE — redraw active canvas
