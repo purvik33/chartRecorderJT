@@ -149,13 +149,18 @@ canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line
 #polar-clock .pt{font-size:27px;font-weight:700;color:var(--ink);
   letter-spacing:.5px}
 #polar-clock .pd{font-size:13px;color:var(--mut);margin-top:3px}
-/* polar: dial on the left, logger stats table on the right */
+/* polar: dial on the left, logger stats table on the right - stays side
+ * by side down to small tablets; the dial shrinks to fit rather than
+ * stacking, and only stacks on phone widths (< 560px) */
 #polar-card{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
-#polar-card .cvw{flex:0 0 460px;max-width:460px}
-#polar-card #polar-stats{flex:1 1 300px;min-width:280px}
+#polar-card .cvw{flex:1 1 300px;max-width:460px;min-width:0}
+#polar-card #polar-stats{flex:1 1 260px;min-width:240px}
 #polar-stats{display:block}
 #polar-stats .tbl-wrap{width:100%;margin-top:0}
-@media(max-width:820px){#polar-card .cvw{flex-basis:100%;max-width:100%}}
+@media(max-width:560px){
+  #polar-card .cvw{flex-basis:100%;max-width:100%}
+  #polar-cv{height:360px}
+}
 .ptbl{width:100%;min-width:0}
 .ptbl th,.ptbl td{text-align:right;padding:7px 12px;font-size:13px;
   font-variant-numeric:tabular-nums;white-space:nowrap}
