@@ -149,14 +149,18 @@ canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line
 #polar-clock .pt{font-size:27px;font-weight:700;color:var(--ink);
   letter-spacing:.5px}
 #polar-clock .pd{font-size:13px;color:var(--mut);margin-top:3px}
-.pleg{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
-  gap:6px 20px;width:100%;margin-top:4px}
-.pleg>span{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;
-  color:var(--ink)}
-.pleg i{width:11px;height:11px;border-radius:3px;display:inline-block;flex:0 0 auto}
-.pleg .ct{min-width:120px}
-.pleg .mm{color:var(--mut);font-weight:400;margin-left:auto}
-.pleg .mm b{color:var(--ink);font-weight:600}
+#polar-stats{display:block}
+#polar-stats .tbl-wrap{width:100%;margin-top:6px}
+.ptbl{width:100%;min-width:0}
+.ptbl th,.ptbl td{text-align:right;padding:7px 12px;font-size:13px;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.ptbl thead th{background:var(--card2)}
+.ptbl .l{text-align:left}
+.ptbl .u{text-align:left;color:var(--mut)}
+.ptbl .sw{width:26px;padding-right:0}
+.ptbl .sw i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.ptbl td b{color:var(--ink);font-weight:600}
+.ptbl tbody tr:hover{background:var(--card2)}
 /* ---------- Data / download ---------- */
 .dl-lbl{display:inline-flex;align-items:center;gap:8px;color:var(--mut);font-size:13.5px}
 input[type=date],input[type=search]{background:var(--card2);color:var(--ink);
@@ -756,14 +760,18 @@ function drawPolar(c){
     const vs=s.map(p=>p.v);
     const vmn=Math.min(...vs),vmx=Math.max(...vs),
           vav=vs.reduce((a,b)=>a+b,0)/vs.length;
-    leg.push(`<span><i style="background:${col}"></i>`+
-      `<b class="ct">CH${i+1} ${tag}</b>`+
-      `<span class="mm">min <b>${vmn.toFixed(1)}</b> &middot; `+
-      `max <b>${vmx.toFixed(1)}</b> &middot; avg <b>${vav.toFixed(1)}</b> ${unit}</span>`+
-      `</span>`);
+    const cur=(LIVE&&LIVE.ch[i]&&isNum(LIVE.ch[i].status))
+      ?LIVE.ch[i].value.toFixed(1):"–";
+    leg.push(`<tr><td class="sw"><i style="background:${col}"></i></td>`+
+      `<td class="l">CH${i+1} <b>${tag}</b></td>`+
+      `<td>${cur}</td><td>${vmn.toFixed(1)}</td><td>${vmx.toFixed(1)}</td>`+
+      `<td><b>${vav.toFixed(1)}</b></td><td class="u">${unit}</td></tr>`);
   });
   $("polar-stats").innerHTML=leg.length
-    ?`<div class="pleg">${leg.join("")}</div>`
+    ?`<div class="tbl-wrap"><table class="ptbl"><thead><tr><th></th>`+
+     `<th class="l">Channel</th><th>Now</th><th>Min</th><th>Max</th>`+
+     `<th>Avg</th><th class="l">Unit</th></tr></thead>`+
+     `<tbody>${leg.join("")}</tbody></table></div>`
     :`<span style="color:var(--mut)">No valid samples yet today.</span>`;
 }
 
