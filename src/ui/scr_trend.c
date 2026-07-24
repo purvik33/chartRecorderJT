@@ -539,9 +539,7 @@ void scr_trend_build(lv_obj_t *parent)
         lv_obj_set_style_border_width(vpanel, 1, 0);
         lv_obj_set_style_radius(vpanel, 8, 0);
         lv_obj_set_style_pad_all(vpanel, 8, 0);
-        lv_obj_set_style_pad_row(vpanel, 6, 0);
-        lv_obj_set_style_pad_column(vpanel, 6, 0);
-        lv_obj_set_flex_flow(vpanel, LV_FLEX_FLOW_ROW_WRAP);
+        lv_obj_set_layout(vpanel, LV_LAYOUT_NONE);   /* absolute 2x4 grid */
         lv_obj_remove_flag(vpanel, LV_OBJ_FLAG_SCROLLABLE);
         int tw = (VP_W - 16 - 6) / 2;             /* two tiles across */
         int th = (chart_h - 16 - 3 * 6) / 4;      /* four tiles down  */
@@ -549,6 +547,7 @@ void scr_trend_build(lv_obj_t *parent)
             lv_color_t cc = lv_color_hex(series_colors[i]);
             lv_obj_t *tile = lv_obj_create(vpanel);
             lv_obj_set_size(tile, tw, th);
+            lv_obj_set_pos(tile, (i % 2) * (tw + 6), (i / 2) * (th + 6));
             lv_obj_set_style_bg_color(tile, lv_color_mix(cc, COL_PANEL, 30), 0);
             lv_obj_set_style_border_color(tile, cc, 0);
             lv_obj_set_style_border_width(tile, 2, 0);
