@@ -181,6 +181,8 @@ static void load_day(void)
     int base = ui_group() * CH_PER_GROUP;
     time_t ds = today_start() - (time_t)p_day_off * 86400;
     history_load(ds, ui_group(), &pday);
+    if (p_day_off == 0)
+        history_overlay_live(&pday, ds, ui_group());  /* fold in sub-minute live samples */
 
     data_lock();
     for (int c = 0; c < CH_PER_GROUP; c++) {
@@ -401,21 +403,25 @@ void scr_polar_build(lv_obj_t *parent)
 void scr_polar_refresh(void)
 {
     if (!built || !lv_obj_is_valid(canvas)) { built = false; return; }
-    if (p_day_off != 0) return;
+    if (p_day_off != 0) return;          /* history view is static - never redraw */
 
-    reload_cnt++;
-    if (reload_cnt >= 20) {
-        /* full reload incl. statistics every 10 s */
+    /* Cheap, every tick: just the hub clock text. No canvas work. */
+    time_t now = time(NULL);
+    struct tm tm = *localtime(&now);
+    lv_label_set_text_fmt(lbl_hub_t, "%02d:%02d", tm.tm_hour, tm.tm_min);
+
+    /* Heavy path - re-read the day, fold in live samples, recompute stats and
+     * re-rasterise the whole dial - only every 5 s (10 x 500 ms ticks).
+     *
+     * The old code re-rasterised ~5000 anti-aliased line segments into a
+     * 360x360 ARGB canvas AND took the data mutex 28,800 times (history_overlay_live)
+     * EVERY SECOND. On a 24 h dial with ~2 min radial resolution that redraw
+     * changed nothing visible, yet it was the only uptime-correlated continuous
+     * load in the whole app - and it is exclusive to Polar. Dropping it to 5 s
+     * is a ~5-10x cut in that churn; the pen still advances smoothly and the
+     * clock stays live every 500 ms. */
+    if (++reload_cnt >= 10) {
         reload_cnt = 0;
         load_day();
-    } else if ((reload_cnt & 1) == 0) {
-        /* live layer: per-second samples onto the dial + hub clock */
-        history_overlay_live(&pday, today_start(), ui_group());
-
-        time_t now = time(NULL);
-        struct tm tm = *localtime(&now);
-        lv_label_set_text_fmt(lbl_hub_t, "%02d:%02d", tm.tm_hour, tm.tm_min);
-
-        draw_chart();
     }
 }
