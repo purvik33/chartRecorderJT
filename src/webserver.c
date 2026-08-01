@@ -416,6 +416,93 @@ static void http_404(wsock_t s)
     http_send(s, "404 Not Found", "text/plain", "not found", 9);
 }
 
+/* ---- authentication (HTTP Basic) --------------------------------------- */
+#ifdef _WIN32
+#define STRNCASECMP _strnicmp
+#else
+#include <strings.h>
+#define STRNCASECMP strncasecmp
+#endif
+
+static int b64val(char c)
+{
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+static void b64decode(const char *in, char *out, int outmax)
+{
+    int o = 0, bits = 0, acc = 0;
+    for (; *in && *in != '\r' && *in != '\n' && *in != ' '; in++) {
+        if (*in == '=') break;
+        int v = b64val(*in);
+        if (v < 0) continue;
+        acc = (acc << 6) | v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            if (o < outmax - 1) out[o++] = (char)((acc >> bits) & 0xFF);
+        }
+    }
+    out[o] = 0;
+}
+
+/* constant-time compare - no early-out timing leak on the password */
+static int ct_eq(const char *a, const char *b)
+{
+    size_t la = strlen(a), lb = strlen(b), n = la > lb ? la : lb;
+    int d = (int)(la ^ lb);
+    for (size_t i = 0; i < n; i++)
+        d |= (unsigned char)(i < la ? a[i] : 0) ^
+             (unsigned char)(i < lb ? b[i] : 0);
+    return d == 0;
+}
+
+/* value of a header (case-insensitive), located at the start of a line */
+static const char *http_header(const char *req, const char *name)
+{
+    size_t nl = strlen(name);
+    for (const char *p = req; *p; p++)
+        if ((p == req || p[-1] == '\n') && STRNCASECMP(p, name, nl) == 0)
+            return p + nl;
+    return NULL;
+}
+
+static int web_authorized(const char *req)
+{
+    if (!g_cfg.web_auth) return 1;                 /* auth disabled */
+
+    const char *a = http_header(req, "authorization:");
+    if (!a) return 0;
+    while (*a == ' ') a++;
+    if (STRNCASECMP(a, "basic ", 6) != 0) return 0;
+    a += 6;
+    while (*a == ' ') a++;
+
+    char dec[128], want[80];
+    b64decode(a, dec, sizeof(dec));
+    snprintf(want, sizeof(want), "%s:%s", g_cfg.web_user, g_cfg.web_pass);
+    return ct_eq(dec, want);
+}
+
+static void http_401(wsock_t s)
+{
+    static const char body[] = "Authentication required";
+    char hdr[256];
+    int hl = snprintf(hdr, sizeof(hdr),
+                      "HTTP/1.1 401 Unauthorized\r\n"
+                      "WWW-Authenticate: Basic realm=\"PR-40 Recorder\"\r\n"
+                      "Content-Type: text/plain\r\nContent-Length: %u\r\n"
+                      "Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+                      (unsigned)(sizeof(body) - 1));
+    if (send_all(s, hdr, (size_t)hl) == 0)
+        send_all(s, body, sizeof(body) - 1);
+}
+
 /* stream a log file with a download-friendly header */
 static void send_file(wsock_t s, const char *path)
 {
@@ -607,6 +694,13 @@ static void handle_client(wsock_t c)
     if (sscanf(req, "GET %127s HTTP", path) != 1) {
         http_send(c, "405 Method Not Allowed", "text/plain", "GET only",
                   8);
+        wsock_close(c);
+        return;
+    }
+
+    if (!web_authorized(req)) {          /* gate everything behind login */
+        http_401(c);
+        served++;
         wsock_close(c);
         return;
     }

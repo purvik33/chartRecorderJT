@@ -63,6 +63,9 @@ static void set_defaults(void)
     g_cfg.update_token[0] = 0;
     g_cfg.web_enable = 1;
     g_cfg.web_port   = 8080;
+    g_cfg.web_auth   = 1;
+    strcpy(g_cfg.web_user, "admin");
+    strcpy(g_cfg.web_pass, "admin");
 
     g_cfg.cfr_enable = 0;
     g_cfg.esign_enable = 1;      /* executed e-signature on reports, on   */
@@ -136,6 +139,9 @@ void config_load(void)
             else if (!strcmp(key, "factory_pin"))    { strncpy(g_cfg.factory_pin, val, sizeof(g_cfg.factory_pin)-1); g_cfg.factory_pin[sizeof(g_cfg.factory_pin)-1] = 0; }
             else if (!strcmp(key, "web_enable"))     g_cfg.web_enable = atoi(val);
             else if (!strcmp(key, "web_port"))       g_cfg.web_port = atoi(val);
+            else if (!strcmp(key, "web_auth"))       g_cfg.web_auth = atoi(val);
+            else if (!strcmp(key, "web_user"))       { strncpy(g_cfg.web_user, val, sizeof(g_cfg.web_user)-1); g_cfg.web_user[sizeof(g_cfg.web_user)-1]=0; }
+            else if (!strcmp(key, "web_pass"))       { strncpy(g_cfg.web_pass, val, sizeof(g_cfg.web_pass)-1); g_cfg.web_pass[sizeof(g_cfg.web_pass)-1]=0; }
             else if (!strcmp(key, "update_repo"))    { strncpy(g_cfg.update_repo,  val, sizeof(g_cfg.update_repo)-1);  g_cfg.update_repo[sizeof(g_cfg.update_repo)-1] = 0; }
             else if (!strcmp(key, "update_token"))   { strncpy(g_cfg.update_token, val, sizeof(g_cfg.update_token)-1); g_cfg.update_token[sizeof(g_cfg.update_token)-1] = 0; }
             else if (!strcmp(key, "cfr_enable"))     g_cfg.cfr_enable = atoi(val);
@@ -237,6 +243,9 @@ void config_save(void)
     fprintf(f, "net_dns=%s\n",    g_cfg.net_dns);
     fprintf(f, "web_enable=%d\n", g_cfg.web_enable);
     fprintf(f, "web_port=%d\n",   g_cfg.web_port);
+    fprintf(f, "web_auth=%d\n",   g_cfg.web_auth);
+    fprintf(f, "web_user=%s\n",   g_cfg.web_user);
+    fprintf(f, "web_pass=%s\n",   g_cfg.web_pass);
     fprintf(f, "wifi_enable=%d\n", g_cfg.wifi_enable);
     fprintf(f, "wifi_ssid=%s\n",   g_cfg.wifi_ssid);
     fprintf(f, "wifi_pass=%s\n",   g_cfg.wifi_pass);

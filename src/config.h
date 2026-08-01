@@ -69,6 +69,9 @@ typedef struct {
     /* built-in web server (read-only dashboard + CSV download) */
     int  web_enable;
     int  web_port;
+    int  web_auth;        /* 1 = require login on the web dashboard */
+    char web_user[24];    /* web dashboard username */
+    char web_pass[40];    /* web dashboard password */
 
     /* 21 CFR Part 11 mode + user accounts (slot 0 is always the
      * built-in administrator so a lockout is impossible) */
