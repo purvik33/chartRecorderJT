@@ -7,8 +7,8 @@
 #include <time.h>
 #include <pthread.h>
 
-/* delete day-based log files older than this many days */
-#define LOG_RETENTION_DAYS 90
+/* Log retention is set by g_cfg.retention_days (0 = keep until the
+ * disk-full safety net reclaims space). */
 
 #ifdef _WIN32
 #include <windows.h>
@@ -161,11 +161,14 @@ static void logger_rotate(void)
     DIR *dp = opendir("logs");
     if (!dp) return;
 
+    int keep = g_cfg.retention_days;
+    if (keep <= 0) { closedir(dp); return; }   /* 0 = keep until disk-full */
+
     time_t now = time(NULL);
     struct dirent *e;
     while ((e = readdir(dp)) != NULL) {
         int age = log_file_age_days(e->d_name, now);
-        if (age > LOG_RETENTION_DAYS) {
+        if (age > keep) {
             char path[300];
             snprintf(path, sizeof(path), "logs/%s", e->d_name);
             remove(path);

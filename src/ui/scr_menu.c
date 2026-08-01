@@ -139,7 +139,7 @@ static lv_obj_t *row_uzero, *row_uspan;
 static int sel_card, sel_ch;   /* channel setup tab selection */
 static lv_obj_t *dd_src, *ta_port, *dd_baud, *dd_cards, *ta_slave,
                 *ta_regbase, *dd_func, *dd_fmt, *dd_order, *lbl_commres;
-static lv_obj_t *dd_interval;
+static lv_obj_t *dd_interval, *dd_retention;
 static lv_obj_t *lbl_usb, *lbl_result;
 /* calibration / service form */
 static lv_obj_t *dd_scard;
@@ -1385,12 +1385,17 @@ static void build_cfr_form(void)
     lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
 }
 
+/* retention choices, in days (0 = keep until the disk-full net reclaims) */
+static const int retention_vals[] = { 90, 365, 730, 1825, 3650, 0 };
+
 static void log_save_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
     g_cfg.store_interval = interval_vals[lv_dropdown_get_selected(dd_interval)];
+    g_cfg.retention_days = retention_vals[lv_dropdown_get_selected(dd_retention)];
     config_save();
-    event_log("CONFIG", "Store interval set to %d s", g_cfg.store_interval);
+    event_log("CONFIG", "Store interval %d s; keep data %d days",
+              g_cfg.store_interval, g_cfg.retention_days);
 }
 
 static void build_logging_form(void)
@@ -1402,6 +1407,15 @@ static void build_logging_form(void)
     dd_interval = form_dd(form_row("Store interval"),
         "1 minute\n5 minutes\n10 minutes\n15 minutes\n"
         "30 minutes\n1 hour", sel);
+
+    int rsel = 3;   /* default highlight = 5 years */
+    for (int i = 0; i < 6; i++)
+        if (retention_vals[i] == g_cfg.retention_days) rsel = i;
+
+    dd_retention = form_dd(form_row("Keep data"),
+        "90 days\n1 year\n2 years\n5 years\n10 years\n"
+        "Until disk full", rsel);
+
     page_save_button(LV_SYMBOL_SAVE "  Save", log_save_cb);
 }
 

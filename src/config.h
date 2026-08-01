@@ -32,6 +32,7 @@ typedef struct {
     int  word_order;      /* float only: 0 = CDAB, 1 = ABCD */
     int  fmt;             /* val_fmt_t */
     int  store_interval;  /* logging interval, seconds */
+    int  retention_days;  /* keep logs this many days (0 = keep until disk-full) */
     char brand[40];       /* company / product name shown to the customer */
     char model[24];       /* model name shown on splash and About */
     int  theme;           /* product colour theme index */
