@@ -13,15 +13,43 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <direct.h>
+#include <io.h>
 static void msleep(int ms) { Sleep(ms); }
 static void make_dir(const char *p) { _mkdir(p); }
 #else
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <dirent.h>
+#include <fcntl.h>
 static void msleep(int ms) { usleep(ms * 1000); }
 static void make_dir(const char *p) { mkdir(p, 0755); }
 #endif
+
+/* Force a file's buffered data all the way onto the storage medium, so a
+ * power cut can lose at most the row being written now - never a previously
+ * stored row and never the filesystem structure itself. */
+static void file_durable(FILE *f)
+{
+    fflush(f);
+#ifdef _WIN32
+    _commit(_fileno(f));
+#else
+    fsync(fileno(f));
+#endif
+}
+
+/* fsync the directory too, so a freshly created day file's directory entry
+ * survives a power cut (on ext4 a new file can otherwise vanish). */
+static void dir_durable(const char *dir)
+{
+#ifdef _WIN32
+    (void)dir;
+#else
+    int fd = open(dir, O_RDONLY | O_DIRECTORY);
+    if (fd >= 0) { fsync(fd); close(fd); }
+#endif
+}
 
 /* Portable localtime_r: the plain localtime() returns a pointer into a
  * shared static buffer, so a concurrent localtime() call in another
@@ -91,7 +119,10 @@ static void write_sample(time_t when)
     for (int i = 0; i < CH_TOTAL; i++)
         fprintf(f, ",%.3f,%s", (double)val[i], status_txt(st[i]));
     fprintf(f, "\n");
+
+    file_durable(f);                 /* flush this row to the card before close */
     fclose(f);
+    if (new_file) dir_durable("logs");   /* make the new file's dirent durable */
 }
 
 /* Retention: remove day-based log files (logs/YYYY-MM-DD.csv,
@@ -142,8 +173,72 @@ static void logger_rotate(void)
     }
     closedir(dp);
 }
+
+/* ---- disk-full safety net --------------------------------------------------
+ * Retention prunes by age; this prunes by FREE SPACE so the card can never
+ * fill up and silently stop the recorder (or destabilise the OS). When free
+ * space drops below the floor we delete WHOLE days oldest-first - the data
+ * file plus its event and alarm files - and never touch today's file. */
+#define DISK_WARN_FREE_MB 600
+#define DISK_MIN_FREE_MB  250
+
+static long disk_free_mb(void)
+{
+    struct statvfs v;
+    if (statvfs("logs", &v) != 0) return -1;
+    return (long)((double)v.f_bavail * (double)v.f_frsize / (1024.0 * 1024.0));
+}
+
+/* oldest logs/<date>.csv strictly before today_str; 0 if none */
+static int oldest_log_date(const char *today_str, char out[11])
+{
+    DIR *dp = opendir("logs");
+    if (!dp) return 0;
+    char best[11] = "";
+    struct dirent *e;
+    while ((e = readdir(dp)) != NULL) {
+        const char *n = e->d_name;
+        if (strlen(n) != 14 || strcmp(n + 10, ".csv")) continue;  /* data file only */
+        int y, m, d;
+        if (sscanf(n, "%4d-%2d-%2d", &y, &m, &d) != 3) continue;
+        char ds[11];
+        memcpy(ds, n, 10); ds[10] = 0;
+        if (strcmp(ds, today_str) >= 0) continue;                 /* never today */
+        if (best[0] == 0 || strcmp(ds, best) < 0) memcpy(best, ds, 11);
+    }
+    closedir(dp);
+    if (best[0] == 0) return 0;
+    memcpy(out, best, 11);
+    return 1;
+}
+
+static void disk_ensure_space(const char *today_str)
+{
+    long freemb = disk_free_mb();
+    if (freemb < 0) return;                    /* statvfs failed - do nothing */
+
+    static int warned = 0;
+    if (freemb < DISK_WARN_FREE_MB && !warned) {
+        warned = 1;
+        event_log("SYSTEM", "Storage low: %ld MB free", freemb);
+    } else if (freemb >= DISK_WARN_FREE_MB) {
+        warned = 0;                            /* re-arm the warning */
+    }
+
+    int guard = 500;                           /* never spin forever */
+    while (freemb >= 0 && freemb < DISK_MIN_FREE_MB && guard-- > 0) {
+        char ds[11], p[300];
+        if (!oldest_log_date(today_str, ds)) break;   /* nothing older to drop */
+        snprintf(p, sizeof(p), "logs/%s.csv", ds);        remove(p);
+        snprintf(p, sizeof(p), "logs/events-%s.csv", ds); remove(p);
+        snprintf(p, sizeof(p), "logs/alarms-%s.csv", ds); remove(p);
+        event_log("SYSTEM", "Storage full: deleted oldest logs for %s", ds);
+        freemb = disk_free_mb();
+    }
+}
 #else
-static void logger_rotate(void) { }   /* no dirent on the Windows sim */
+static void logger_rotate(void) { }              /* no dirent on the Windows sim */
+static void disk_ensure_space(const char *t) { (void)t; }
 #endif
 
 /* Samples are stored on wall-clock boundaries, not "N seconds after
@@ -180,6 +275,10 @@ static void *logger_thread(void *arg)
         }
         if (slot != last_slot) {
             last_slot = slot;
+            char today_str[11];
+            snprintf(today_str, sizeof(today_str), "%04d-%02d-%02d",
+                     tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+            disk_ensure_space(today_str);     /* free space before writing */
             write_sample(now - (sod % iv));   /* stamp the boundary */
         }
     }
@@ -190,6 +289,17 @@ void logger_init(void)
 {
     make_dir("logs");
     logger_rotate();               /* prune stale logs at boot */
+
+    {   /* free-space safety check before the first sample is ever written */
+        time_t now = time(NULL);
+        struct tm tmv;
+        loc_time(&now, &tmv);
+        char today_str[11];
+        snprintf(today_str, sizeof(today_str), "%04d-%02d-%02d",
+                 tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
+        disk_ensure_space(today_str);
+    }
+
     pthread_t t;
     if (pthread_create(&t, NULL, logger_thread, NULL) != 0)
         event_log("SYSTEM", "logger thread failed to start");
