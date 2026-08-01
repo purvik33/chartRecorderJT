@@ -257,6 +257,9 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
       <span class="pill alm-pill clear" id="p-alm">0 alarms</span>
       <span id="clk" class="tnum">--:--:--</span>
       <span id="fw">v0.0.0</span>
+      <button id="logout" title="Sign out" aria-label="Sign out" style="background:var(--card,#152638);border:1px solid var(--line,#24405c);color:var(--mut,#8fa3b8);border-radius:8px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:13px;font-family:inherit">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        <span>Sign out</span></button>
     </div>
   </header>
 
@@ -390,6 +393,14 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 
 <script>
 "use strict";
+/* session handling: any 401 (session expired/cleared) bounces to the login
+ * page; the Sign-out button ends the session server-side then does the same */
+(function(){
+  const _f=window.fetch;
+  window.fetch=(...a)=>_f(...a).then(r=>{if(r.status===401)location.replace("/login");return r;});
+  const b=document.getElementById("logout");
+  if(b)b.onclick=()=>{fetch("/api/logout",{method:"POST"}).finally(()=>location.replace("/login"));};
+})();
 const $=id=>document.getElementById(id);
 const CH_PER_GROUP=8;
 const FAULT=new Set(["SKIP","UNDER","OVER","OPEN","COMM"]);
