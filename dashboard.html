@@ -219,6 +219,18 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 .set-card .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
 .note{background:rgba(232,161,60,.1);border:1px solid rgba(232,161,60,.35);
   color:var(--warn);border-radius:10px;padding:13px 16px;font-size:13.5px}
+/* settings status header */
+.set-header{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;
+  background:linear-gradient(180deg,var(--card),color-mix(in srgb,var(--card) 88%,#000));
+  border:1px solid var(--line);border-radius:14px;padding:18px 24px;margin-bottom:20px}
+.sh-title h2{font-size:20px;margin:0;letter-spacing:-.01em}
+.sh-title span{color:var(--mut);font-size:13px}
+.sh-stats{display:flex;gap:14px;flex-wrap:wrap}
+.sh-stat{display:flex;flex-direction:column;gap:3px;background:var(--bg);border:1px solid var(--line);
+  border-radius:10px;padding:9px 15px;min-width:78px}
+.sh-stat span{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.7px;font-weight:600}
+.sh-stat b{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+@media(max-width:640px){.set-header{flex-direction:column;align-items:flex-start}.sh-stats{width:100%}}
 /* config editor - two-pane settings */
 .set2{display:grid;grid-template-columns:230px 1fr;gap:22px;align-items:start;margin-top:8px}
 .set2-nav{display:flex;flex-direction:column;gap:3px}
@@ -464,16 +476,15 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 
     <!-- SETTINGS -->
     <section class="screen" id="s-settings">
-      <div class="scr-head"><h2>Settings</h2>
-        <span class="sub">Display &amp; status</span></div>
-      <h2 class="hint">Status</h2>
-      <div class="set-grid">
-        <div class="set-card"><div class="k">Firmware</div><div class="v" id="set-fw">&mdash;</div></div>
-        <div class="set-card"><div class="k">Current group</div><div class="v" id="set-grp">&mdash;</div></div>
-        <div class="set-card"><div class="k">Channels</div><div class="v" id="set-ch">&mdash;</div></div>
-        <div class="set-card"><div class="k">Card link</div><div class="v" id="set-link">&mdash;</div></div>
+      <div class="set-header">
+        <div class="sh-title"><h2>Settings</h2><span>Configure and manage the recorder</span></div>
+        <div class="sh-stats">
+          <div class="sh-stat"><span>Firmware</span><b id="set-fw">&mdash;</b></div>
+          <div class="sh-stat"><span>Group</span><b id="set-grp">&mdash;</b></div>
+          <div class="sh-stat"><span>Channels</span><b id="set-ch">&mdash;</b></div>
+          <div class="sh-stat"><span>Card link</span><b id="set-link">&mdash;</b></div>
+        </div>
       </div>
-      <h2 class="hint">Configuration</h2>
       <div class="set2" id="cfg-wrap">
         <div class="set2-nav" id="cfg-tabs">
           <div class="cfg-tab on" data-g="channels"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Channels &amp; alarms</div>
@@ -1105,6 +1116,26 @@ function renderDisplay(B){
   const lb=$("cfg-lockbtn");if(lb)lb.onclick=doLock;
   const sel=$("f_trendstyle");if(sel)sel.onchange=()=>{trendStyle=sel.value;localStorage.setItem("trendStyle",trendStyle);applyTrendStyle();};
 }
+function renderFactoryGate(B){
+  B.innerHTML=cfgHeader("factory")+
+    `<div class="cfg-unlock"><h3>Factory settings password</h3>`+
+    `<p class="cfg-usub">Factory settings (data source and 21 CFR mode) also require the service password, in addition to your Super Admin login.</p>`+
+    `<div class="cfg-grid" style="max-width:340px">`+fF("Service password","fu_pass","","password")+`</div>`+
+    `<div class="cfg-actions"><button class="cfg-save" id="fu_btn">Unlock factory settings</button><span class="cfg-msg" id="fu_msg"></span></div></div>`;
+  const lb=$("cfg-lockbtn");if(lb)lb.onclick=doLock;
+  const pf=$("fu_pass");if(pf){pf.focus();pf.onkeydown=e=>{if(e.key==="Enter")doFactoryUnlock();};}
+  const fb=$("fu_btn");if(fb)fb.onclick=doFactoryUnlock;
+}
+async function doFactoryUnlock(){
+  const msg=$("fu_msg");msg.className="cfg-msg";msg.textContent="Checking…";
+  try{const r=await fetch("/api/settings/factory-unlock",{method:"POST",
+        headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"pass="+encodeURIComponent($("fu_pass").value)});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.ok){CFG=null;loadCfg(true);return;}
+    if(j.err==="noaccess"){msg.textContent="";wpopup("You don't have access for this page.");return;}
+    msg.className="cfg-msg err";msg.textContent="Incorrect — try again";
+  }catch(e){msg.className="cfg-msg err";msg.textContent="Connection error";}
+}
 function rGroup(t){return `<div class="cfg-group">${t}</div>`;}
 function cfgFoot(){return `<div class="cfg-foot"><button class="cfg-save" id="cfg-savebtn">Save changes</button><span class="cfg-msg" id="cfg-msg"></span></div>`;}
 function usersTable(){
@@ -1126,19 +1157,21 @@ function usersTable(){
 }
 function renderCfg(){
   if(!CFG){loadCfg();return;}
-  const B=$("cfg-body"),nav=$("cfg-tabs");
+  const B=$("cfg-body"),nav=$("cfg-tabs"),wrap=$("cfg-wrap");
   const unlocked=!!(CFG.sess&&CFG.sess.unlocked);
-  /* Users: only when 21 CFR is on and Admin+.  Factory settings (data source
-     + 21 CFR switch): Super Admin only.  Both need an unlocked session.
-     Display is a browser-only preference tab - always available. */
-  const canUsers=unlocked&&CFG.sess.cfr&&CFG.sess.role>=2;
-  const canFactory=unlocked&&CFG.sess.role>=3;
+  /* before unlocking, hide the tabs entirely - just show the sign-in panel */
+  if(!unlocked){if(nav)nav.style.display="none";if(wrap)wrap.style.gridTemplateColumns="1fr";renderUnlock(B);return;}
+  if(nav)nav.style.display="";if(wrap)wrap.style.gridTemplateColumns="";
+  /* Users: only when 21 CFR is on and Admin+.  Factory: Super Admin only. */
+  const canUsers=CFG.sess.cfr&&CFG.sess.role>=2;
+  const canFactory=CFG.sess.role>=3;
   const utab=nav&&nav.querySelector('[data-g="users"]');if(utab)utab.style.display=canUsers?"":"none";
   const ftab=nav&&nav.querySelector('[data-g="factory"]');if(ftab)ftab.style.display=canFactory?"":"none";
-  if((cfgGroup==="users"&&!canUsers)||(cfgGroup==="factory"&&!canFactory))cfgGroup=unlocked?"channels":"display";
+  if((cfgGroup==="users"&&!canUsers)||(cfgGroup==="factory"&&!canFactory))cfgGroup="channels";
   if(nav)nav.querySelectorAll(".cfg-tab").forEach(t=>t.classList.toggle("on",t.dataset.g==cfgGroup));
   if(cfgGroup==="display"){renderDisplay(B);return;}
-  if(!unlocked){renderUnlock(B);return;}
+  /* Factory settings needs the extra service password */
+  if(cfgGroup==="factory"&&!CFG.sess.factory){renderFactoryGate(B);return;}
 
   let inner="",warn="",chan="",isUsers=false;
   if(cfgGroup=="channels"){
@@ -1252,6 +1285,8 @@ async function saveCfg(){
     if(r.ok){msg.className="cfg-msg ok";msg.textContent="Saved ✓";setTimeout(()=>loadCfg(true),500);return;}
     const j=await r.json().catch(()=>({}));
     if(j.need==="unlock"){msg.className="cfg-msg err";msg.textContent="Session locked — sign in again";
+      setTimeout(()=>{CFG=null;loadCfg(true);},1000);}
+    else if(j.need==="factory"){msg.className="cfg-msg err";msg.textContent="Factory password needed again";
       setTimeout(()=>{CFG=null;loadCfg(true);},1000);}
     else if(j.need==="role"){msg.className="cfg-msg err";msg.textContent="Your role can't change these settings";}
     else{msg.className="cfg-msg err";msg.textContent="Save failed";}
