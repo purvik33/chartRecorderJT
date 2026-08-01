@@ -826,15 +826,21 @@ static void api_config_get(wsock_t s, const char *req)
     /* once unlocked as less than Admin (a Supervisor), the account list is
      * hidden entirely - a Supervisor must not see the users or their PINs.
      * (Still sent while locked so the login drop-down can list accounts.) */
+    int viewer     = (unlocked && ss) ? ss->cfr_role : -1;
     int hide_users = unlocked && g_cfg.cfr_enable && ss && ss->cfr_role < ROLE_ADMIN;
     AP("\"users\":[");
     if (!hide_users)
         for (int i = 0; i < 8; i++) {
-            char nm[40];
+            char nm[40], pn[16] = "";
             jesc(nm, sizeof(nm), g_cfg.users[i].name);
-            AP("%s{\"name\":\"%s\",\"role\":%d,\"active\":%d,\"pinset\":%d}",
+            /* reveal the PIN only to Admin+; an Admin may NOT see a
+             * Super-admin's PIN (only another Super-admin can). */
+            if (viewer >= ROLE_ADMIN &&
+                (viewer >= ROLE_SUPERADMIN || g_cfg.users[i].role < ROLE_SUPERADMIN))
+                jesc(pn, sizeof(pn), g_cfg.users[i].pin);
+            AP("%s{\"name\":\"%s\",\"role\":%d,\"active\":%d,\"pinset\":%d,\"pin\":\"%s\"}",
                i ? "," : "", nm, g_cfg.users[i].role,
-               g_cfg.users[i].active, g_cfg.users[i].pin_set);
+               g_cfg.users[i].active, g_cfg.users[i].pin_set, pn);
         }
     AP("],\"ch\":[");
     data_lock();
