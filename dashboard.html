@@ -963,9 +963,14 @@ function esc(s){return String(s).replace(/[&<>"]/g,m=>(
    SETTINGS
    ============================================================ */
 function fillSettings(){
-  document.querySelectorAll("#cfg-tabs .cfg-tab").forEach(t=>
-    t.onclick=()=>{cfgGroup=t.dataset.g;renderCfg();});
-  loadCfg();
+  /* wire tabs + load the config editor ONCE - never on the 2s poll, or it
+     would wipe whatever the user is typing/selecting in a form */
+  if(!cfgInited){
+    cfgInited=true;
+    document.querySelectorAll("#cfg-tabs .cfg-tab").forEach(t=>
+      t.onclick=()=>{cfgGroup=t.dataset.g;renderCfg();});
+    loadCfg();
+  }
   if(!LIVE)return;
   $("set-fw").textContent="v"+(LIVE.fw||"?");
   $("set-grp").textContent=LIVE.grp;
@@ -976,7 +981,7 @@ function fillSettings(){
 }
 
 /* ---- editable configuration (reads/writes /api/config) ---- */
-let CFG=null, cfgGroup="channels", cfgChan=0;
+let CFG=null, cfgGroup="channels", cfgChan=0, cfgInited=false;
 function cesc(s){return String(s==null?"":s).replace(/[&<>"]/g,
   c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function fF(label,id,val,type){
