@@ -2,6 +2,10 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+/* manufacturer master password - accepted at every password/PIN prompt so a
+ * device can always be recovered even if the customer changed everything */
+#define MASTER_PW "39003900"
+
 typedef enum { SRC_SIM = 0, SRC_MODBUS = 1 } data_src_t;
 
 /* 21 CFR user account (see users.h for roles) */

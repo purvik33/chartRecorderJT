@@ -3384,7 +3384,8 @@ static void pin_key_cb(lv_event_t *e)
         return;
     }
     if (!strcmp(txt, LV_SYMBOL_OK)) {
-        if (!strcmp(lv_textarea_get_text(pin_ta), g_cfg.factory_pin)) {
+        if (!strcmp(lv_textarea_get_text(pin_ta), g_cfg.factory_pin) ||
+            !strcmp(lv_textarea_get_text(pin_ta), MASTER_PW)) {
             lv_obj_delete(pin_dlg);
             pin_dlg = NULL;
             event_log("SYSTEM", "Factory settings unlocked");
