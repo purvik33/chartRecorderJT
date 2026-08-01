@@ -1049,7 +1049,7 @@ function fillSettings(){
 }
 
 /* ---- editable configuration (reads/writes /api/config) ---- */
-let CFG=null, cfgGroup="channels", cfgChan=0, cfgInited=false, netSub="ethernet";
+let CFG=null, cfgGroup="channels", cfgChan=0, cfgInited=false, subSel={network:"ethernet",factory:"source"};
 const EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const GMETA={
   channels:{t:"Channels & alarms",d:"Tag, engineering unit, range and Hi/Lo alarm setpoints for each measurement channel.",
@@ -1193,19 +1193,22 @@ function renderCfg(){
     inner=rSelect("Store interval","How often a sample is written to storage","f_si",CFG.log.store_interval,[[60,"1 minute"],[300,"5 minutes"],[600,"10 minutes"],[900,"15 minutes"],[1800,"30 minutes"],[3600,"1 hour"]])+
       rSelect("Keep data","How long recorded history is retained","f_ret",CFG.log.retention_days,[[90,"90 days"],[365,"1 year"],[730,"2 years"],[1825,"5 years"],[3650,"10 years"],[0,"Until disk full"]]);
   }else if(cfgGroup=="factory"){
-    warn="Data source and card count take effect after the recorder restarts.";
-    inner=rGroup("Data source")+
-      rSelect("Data source","Demo data, or live measurement cards","f_src",CFG.comm.source,[[0,"Demo mode"],[1,"Input cards (Card link)"]])+
+    const src=rSelect("Data source","Demo data, or live measurement cards","f_src",CFG.comm.source,[[0,"Demo mode"],[1,"Input cards (Card link)"]])+
       rSelect("Cards fitted","Number of acquisition cards","f_cards",CFG.comm.cards,[[1,"1"],[2,"2"],[3,"3"],[4,"4"],[5,"5"]])+
       rSelect("Baud rate","Card link speed","f_baud",CFG.comm.baud,[[9600,"9600"],[19200,"19200"],[38400,"38400"],[57600,"57600"],[115200,"115200"]])+
       rInput("Port","Serial device path","f_port",CFG.comm.port)+
-      rSelect("Slave base id","Address of the first card","f_slave",CFG.comm.slave_base,Array.from({length:10},(_,i)=>[i+1,String(i+1)]))+
-      rGroup("21 CFR Part 11")+
-      rToggle("21 CFR Part 11 mode","Require an account login and audit every change","f_cfr",CFG.cfr.enable)+
+      rSelect("Slave base id","Address of the first card","f_slave",CFG.comm.slave_base,Array.from({length:10},(_,i)=>[i+1,String(i+1)]));
+    const cfr=rToggle("21 CFR Part 11 mode","Require an account login and audit every change","f_cfr",CFG.cfr.enable)+
       rToggle("E-signature on reports","Print an executed signature block on reports","f_esign",CFG.cfr.esign)+
-      rSelect("Default PIN expiry","Global PIN aging, used when a user has no individual expiry","f_expiry",CFG.cfr.expiry,[[0,"Never"],[30,"30 days"],[60,"60 days"],[90,"90 days"],[180,"180 days"],[365,"365 days"]])+
-      rGroup("Manufacturer access")+
-      rInput("Change manufacturer password","Leave blank to keep the current one","f_manuf","","password");
+      rSelect("Default PIN expiry","Global PIN aging, used when a user has no individual expiry","f_expiry",CFG.cfr.expiry,[[0,"Never"],[30,"30 days"],[60,"60 days"],[90,"90 days"],[180,"180 days"],[365,"365 days"]]);
+    const acc=rInput("Change manufacturer password","Leave blank to keep the current one","f_manuf","","password");
+    const cur=subSel.factory;
+    if(cur==="source")warn="Data source and card count take effect after the recorder restarts.";
+    const sb=(id,lbl)=>`<button type="button" class="subtab${cur===id?" on":""}" data-s="${id}">${lbl}</button>`;
+    inner=`<div class="subtabs">`+sb("source","Data source")+sb("cfr","21 CFR")+sb("access","Manufacturer access")+`</div>`+
+      `<div class="netsec" data-sec="source"${cur==="source"?"":" hidden"}>`+src+`</div>`+
+      `<div class="netsec" data-sec="cfr"${cur==="cfr"?"":" hidden"}>`+cfr+`</div>`+
+      `<div class="netsec" data-sec="access"${cur==="access"?"":" hidden"}>`+acc+`</div>`;
   }else if(cfgGroup=="network"){
     warn="&#9888; A wrong network change can cut off access to the recorder. Changes apply after a restart.";
     const eth=rSelect("Addressing","How the wired address is assigned","f_ndhcp",CFG.net.dhcp,[[1,"DHCP (automatic)"],[0,"Static (manual)"]])+
@@ -1216,11 +1219,12 @@ function renderCfg(){
       rInput("Password",CFG.wifi.haspass?"A password is set — leave blank to keep it":"","f_wpass","","password");
     const tcp=rToggle("Enabled","Serve live values to SCADA/PLC over Modbus TCP","f_tcp",CFG.net.tcp_enable)+
       rInput("TCP port","","f_tcpport",CFG.net.tcp_port);
-    const sb=(id,lbl)=>`<button type="button" class="subtab${netSub===id?" on":""}" data-s="${id}">${lbl}</button>`;
+    const cur=subSel.network;
+    const sb=(id,lbl)=>`<button type="button" class="subtab${cur===id?" on":""}" data-s="${id}">${lbl}</button>`;
     inner=`<div class="subtabs">`+sb("ethernet","Ethernet")+sb("wifi","Wi-Fi")+sb("tcp","Modbus TCP")+`</div>`+
-      `<div class="netsec" data-sec="ethernet"${netSub==="ethernet"?"":" hidden"}>`+eth+`</div>`+
-      `<div class="netsec" data-sec="wifi"${netSub==="wifi"?"":" hidden"}>`+wifi+`</div>`+
-      `<div class="netsec" data-sec="tcp"${netSub==="tcp"?"":" hidden"}>`+tcp+`</div>`;
+      `<div class="netsec" data-sec="ethernet"${cur==="ethernet"?"":" hidden"}>`+eth+`</div>`+
+      `<div class="netsec" data-sec="wifi"${cur==="wifi"?"":" hidden"}>`+wifi+`</div>`+
+      `<div class="netsec" data-sec="tcp"${cur==="tcp"?"":" hidden"}>`+tcp+`</div>`;
   }else if(cfgGroup=="users"){isUsers=true;}
 
   let html=cfgHeader(cfgGroup);
@@ -1234,9 +1238,9 @@ function renderCfg(){
   B.querySelectorAll(".tgl").forEach(b=>b.onclick=()=>b.classList.toggle("on"));
   B.querySelectorAll(".eye").forEach(b=>b.onclick=()=>{const inp=$(b.dataset.t);if(!inp)return;
     const show=inp.type==="password";inp.type=show?"text":"password";b.classList.toggle("on",show);});
-  B.querySelectorAll(".subtab").forEach(b=>b.onclick=()=>{netSub=b.dataset.s;
-    B.querySelectorAll(".subtab").forEach(x=>x.classList.toggle("on",x.dataset.s===netSub));
-    B.querySelectorAll(".netsec").forEach(x=>{x.hidden=(x.dataset.sec!==netSub);});});
+  B.querySelectorAll(".subtab").forEach(b=>b.onclick=()=>{const s=b.dataset.s;subSel[cfgGroup]=s;
+    B.querySelectorAll(".subtab").forEach(x=>x.classList.toggle("on",x.dataset.s===s));
+    B.querySelectorAll(".netsec").forEach(x=>{x.hidden=(x.dataset.sec!==s);});});
 }
 function renderUnlock(B){
   const s=CFG.sess;let h;
