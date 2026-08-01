@@ -219,6 +219,32 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 .set-card .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
 .note{background:rgba(232,161,60,.1);border:1px solid rgba(232,161,60,.35);
   color:var(--warn);border-radius:10px;padding:13px 16px;font-size:13.5px}
+/* config editor */
+.cfg-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 16px}
+.cfg-tab{background:var(--card);border:1px solid var(--line);color:var(--mut);
+  border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}
+.cfg-tab.on{background:var(--acc);border-color:var(--acc);color:#07131f}
+.cfg-body{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.cfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.cfg-f{display:flex;flex-direction:column;gap:5px}
+.cfg-f label{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+.cfg-f input,.cfg-f select{background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  color:var(--ink);font-size:14px;padding:9px 11px;font-family:inherit;outline:none}
+.cfg-f input:focus,.cfg-f select:focus{border-color:var(--acc)}
+.cfg-chrow{max-width:340px;margin-bottom:16px}
+.cfg-actions{display:flex;align-items:center;gap:14px;margin-top:18px}
+.cfg-save{background:var(--acc);color:#07131f;border:none;border-radius:8px;padding:10px 22px;
+  font-weight:700;font-size:14px;cursor:pointer}
+.cfg-save:hover{filter:brightness(1.08)}
+.cfg-msg{font-size:13px}.cfg-msg.ok{color:var(--ok)}.cfg-msg.err{color:var(--alm)}
+.cfg-warn{background:rgba(232,161,60,.1);border:1px solid rgba(232,161,60,.35);color:var(--warn);
+  border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:16px}
+.cfg-utbl{width:100%;border-collapse:collapse;font-size:13px}
+.cfg-utbl th{text-align:left;color:var(--mut);font-size:11px;text-transform:uppercase;
+  letter-spacing:.5px;padding:7px 8px;border-bottom:1px solid var(--line)}
+.cfg-utbl td{padding:6px 8px;border-bottom:1px solid var(--line)}
+.cfg-utbl input,.cfg-utbl select{background:var(--bg);border:1px solid var(--line);border-radius:6px;
+  color:var(--ink);padding:6px 8px;font-size:13px;width:100%;font-family:inherit;outline:none}
 
 /* ---------- empty state ---------- */
 .empty{background:var(--card);border:1px dashed var(--line);border-radius:12px;
@@ -385,8 +411,16 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
         <div class="set-card"><div class="k">Channels</div><div class="v" id="set-ch">&mdash;</div></div>
         <div class="set-card"><div class="k">Card link</div><div class="v" id="set-link">&mdash;</div></div>
       </div>
-      <div class="note">Trend style is saved in this browser. Other configuration
-        editing from the browser is not enabled yet.</div>
+      <h2 class="hint">Configuration</h2>
+      <div class="cfg-tabs" id="cfg-tabs">
+        <div class="cfg-tab on" data-g="channels">Channels &amp; alarms</div>
+        <div class="cfg-tab" data-g="logging">Logging</div>
+        <div class="cfg-tab" data-g="network">Network</div>
+        <div class="cfg-tab" data-g="source">Data source</div>
+        <div class="cfg-tab" data-g="cfr">21 CFR</div>
+        <div class="cfg-tab" data-g="users">Users</div>
+      </div>
+      <div class="cfg-body" id="cfg-body">Loading&hellip;</div>
     </section>
   </main>
 </div>
@@ -921,6 +955,9 @@ function esc(s){return String(s).replace(/[&<>"]/g,m=>(
    SETTINGS
    ============================================================ */
 function fillSettings(){
+  document.querySelectorAll("#cfg-tabs .cfg-tab").forEach(t=>
+    t.onclick=()=>{cfgGroup=t.dataset.g;renderCfg();});
+  loadCfg();
   if(!LIVE)return;
   $("set-fw").textContent="v"+(LIVE.fw||"?");
   $("set-grp").textContent=LIVE.grp;
@@ -928,6 +965,106 @@ function fillSettings(){
   $("set-link").innerHTML=LIVE.link
     ?`<span style="color:var(--ok)">ONLINE</span>`
     :`<span style="color:var(--alm)">NO LINK</span>`;
+}
+
+/* ---- editable configuration (reads/writes /api/config) ---- */
+let CFG=null, cfgGroup="channels", cfgChan=0;
+function cesc(s){return String(s==null?"":s).replace(/[&<>"]/g,
+  c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function fF(label,id,val,type){
+  return `<div class="cfg-f"><label>${label}</label><input id="${id}" `+
+    (type?`type="${type}" `:"")+`value="${cesc(val)}"></div>`;}
+function fSel(label,id,val,opts){
+  return `<div class="cfg-f"><label>${label}</label><select id="${id}">`+
+    opts.map(o=>`<option value="${o[0]}"${String(o[0])==String(val)?" selected":""}>${o[1]}</option>`).join("")+
+    `</select></div>`;}
+function cfgActions(){return `<div class="cfg-actions">`+
+  `<button class="cfg-save" id="cfg-savebtn">Save</button>`+
+  `<span class="cfg-msg" id="cfg-msg"></span></div>`;}
+async function loadCfg(force){
+  if(CFG&&!force){renderCfg();return;}
+  try{const r=await fetch("/api/config");if(!r.ok)throw 0;CFG=await r.json();}
+  catch(e){$("cfg-body").innerHTML='<div class="cfg-msg err">Could not load configuration.</div>';return;}
+  renderCfg();
+}
+function renderCfg(){
+  if(!CFG){loadCfg();return;}
+  document.querySelectorAll("#cfg-tabs .cfg-tab").forEach(t=>t.classList.toggle("on",t.dataset.g==cfgGroup));
+  const B=$("cfg-body");let h="";
+  if(cfgGroup=="channels"){
+    if(cfgChan>=CFG.ch.length)cfgChan=0;
+    const c=CFG.ch[cfgChan];
+    h=`<div class="cfg-chrow">`+fSel("Channel","cfg-ch",cfgChan,
+        CFG.ch.map(x=>[x.n-1,`CH${x.n} · ${x.tag}`]))+`</div>`+
+      `<div class="cfg-grid">`+fF("Tag","f_tag",c.tag)+fF("Unit","f_unit",c.unit)+
+      fF("Range low","f_lo",c.lo)+fF("Range high","f_hi",c.hi)+
+      fF("Alarm high","f_almhi",c.almhi)+fF("Alarm low","f_almlo",c.almlo)+
+      `</div>`+cfgActions();
+  }else if(cfgGroup=="logging"){
+    h=`<div class="cfg-grid">`+
+      fSel("Store interval","f_si",CFG.log.store_interval,[[60,"1 minute"],[300,"5 minutes"],[600,"10 minutes"],[900,"15 minutes"],[1800,"30 minutes"],[3600,"1 hour"]])+
+      fSel("Keep data","f_ret",CFG.log.retention_days,[[90,"90 days"],[365,"1 year"],[730,"2 years"],[1825,"5 years"],[3650,"10 years"],[0,"Until disk full"]])+
+      `</div>`+cfgActions();
+  }else if(cfgGroup=="source"){
+    h=`<div class="cfg-warn">Data source and card count take effect after the recorder restarts.</div>`+
+      `<div class="cfg-grid">`+
+      fSel("Data source","f_src",CFG.comm.source,[[0,"Demo mode"],[1,"Input cards (Card link)"]])+
+      fSel("Cards fitted","f_cards",CFG.comm.cards,[[1,"1"],[2,"2"],[3,"3"],[4,"4"],[5,"5"]])+
+      fSel("Baud rate","f_baud",CFG.comm.baud,[[9600,"9600"],[19200,"19200"],[38400,"38400"],[57600,"57600"],[115200,"115200"]])+
+      fF("Port","f_port",CFG.comm.port)+
+      fSel("Slave base id","f_slave",CFG.comm.slave_base,Array.from({length:10},(_,i)=>[i+1,String(i+1)]))+
+      `</div>`+cfgActions();
+  }else if(cfgGroup=="network"){
+    h=`<div class="cfg-warn">&#9888; Wrong network settings can cut off access to the recorder. Changes apply after restart.</div>`+
+      `<div class="cfg-grid">`+
+      fSel("Ethernet","f_ndhcp",CFG.net.dhcp,[[1,"DHCP (automatic)"],[0,"Static"]])+
+      fF("IP address","f_nip",CFG.net.ip)+fF("Subnet mask","f_nmask",CFG.net.mask)+
+      fF("Gateway","f_ngw",CFG.net.gw)+fF("DNS","f_ndns",CFG.net.dns)+
+      fSel("Wi-Fi","f_wen",CFG.wifi.enable,[[1,"On"],[0,"Off"]])+
+      fF("Wi-Fi SSID","f_wssid",CFG.wifi.ssid)+
+      fF("Wi-Fi password"+(CFG.wifi.haspass?" (set)":""),"f_wpass","","password")+
+      fSel("Modbus TCP server","f_tcp",CFG.net.tcp_enable,[[1,"On"],[0,"Off"]])+
+      fF("TCP port","f_tcpport",CFG.net.tcp_port)+
+      `</div><div class="note" style="margin-top:14px">Leave the Wi-Fi password blank to keep the current one.</div>`+cfgActions();
+  }else if(cfgGroup=="cfr"){
+    h=`<div class="cfg-grid">`+
+      fSel("21 CFR Part 11 mode","f_cfr",CFG.cfr.enable,[[1,"Enabled"],[0,"Disabled"]])+
+      fSel("E-signature on reports","f_esign",CFG.cfr.esign,[[1,"Enabled"],[0,"Disabled"]])+
+      fF("PIN expiry (days, 0 = never)","f_expiry",CFG.cfr.expiry,"number")+
+      `</div>`+cfgActions();
+  }else if(cfgGroup=="users"){
+    h=`<div class="cfg-warn">User 1 is the built-in super admin (role and active state are locked). Leave a PIN blank to keep it unchanged.</div>`+
+      `<table class="cfg-utbl"><tr><th>#</th><th>Name</th><th>Role</th><th>Active</th><th>New PIN</th></tr>`;
+    const ROLES=[[0,"Operator"],[1,"Supervisor"],[2,"Admin"],[3,"Super admin"]];
+    CFG.users.forEach((u,i)=>{
+      h+=`<tr><td>${i+1}</td>`+
+        `<td><input id="u${i}_name" value="${cesc(u.name)}"></td>`+
+        `<td><select id="u${i}_role"${i==0?" disabled":""}>`+ROLES.map(o=>`<option value="${o[0]}"${o[0]==u.role?" selected":""}>${o[1]}</option>`).join("")+`</select></td>`+
+        `<td><select id="u${i}_active"${i==0?" disabled":""}>`+[[1,"Yes"],[0,"No"]].map(o=>`<option value="${o[0]}"${o[0]==u.active?" selected":""}>${o[1]}</option>`).join("")+`</select></td>`+
+        `<td><input id="u${i}_pin" type="password" placeholder="${u.pinset?"••••":"—"}"></td></tr>`;
+    });
+    h+=`</table>`+cfgActions();
+  }
+  B.innerHTML=h;
+  const chsel=$("cfg-ch");if(chsel)chsel.onchange=()=>{cfgChan=+chsel.value;renderCfg();};
+  const sb=$("cfg-savebtn");if(sb)sb.onclick=saveCfg;
+}
+async function saveCfg(){
+  const msg=$("cfg-msg");msg.className="cfg-msg";msg.textContent="Saving…";
+  const P=[],add=(k,v)=>P.push(k+"="+encodeURIComponent(v));
+  if(cfgGroup=="channels"){const i=cfgChan;
+    add("ch"+i+"_tag",$("f_tag").value);add("ch"+i+"_unit",$("f_unit").value);
+    add("ch"+i+"_lo",$("f_lo").value);add("ch"+i+"_hi",$("f_hi").value);
+    add("ch"+i+"_almhi",$("f_almhi").value);add("ch"+i+"_almlo",$("f_almlo").value);
+  }else if(cfgGroup=="logging"){add("store_interval",$("f_si").value);add("retention_days",$("f_ret").value);}
+  else if(cfgGroup=="source"){add("source",$("f_src").value);add("cards",$("f_cards").value);add("baud",$("f_baud").value);add("port",$("f_port").value);add("slave_base",$("f_slave").value);}
+  else if(cfgGroup=="network"){add("net_dhcp",$("f_ndhcp").value);add("net_ip",$("f_nip").value);add("net_mask",$("f_nmask").value);add("net_gw",$("f_ngw").value);add("net_dns",$("f_ndns").value);add("wifi_enable",$("f_wen").value);add("wifi_ssid",$("f_wssid").value);if($("f_wpass").value)add("wifi_pass",$("f_wpass").value);add("tcp_enable",$("f_tcp").value);add("tcp_port",$("f_tcpport").value);}
+  else if(cfgGroup=="cfr"){add("cfr_enable",$("f_cfr").value);add("esign_enable",$("f_esign").value);add("pin_expiry_days",$("f_expiry").value);}
+  else if(cfgGroup=="users"){CFG.users.forEach((u,i)=>{add("user"+i+"_name",$("u"+i+"_name").value);if(i>0){add("user"+i+"_role",$("u"+i+"_role").value);add("user"+i+"_active",$("u"+i+"_active").value);}const pv=$("u"+i+"_pin").value;if(pv)add("user"+i+"_pin",pv);});}
+  try{const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:P.join("&")});
+    if(!r.ok)throw 0;msg.className="cfg-msg ok";msg.textContent="Saved ✓";
+    setTimeout(()=>loadCfg(true),500);
+  }catch(e){msg.className="cfg-msg err";msg.textContent="Save failed";}
 }
 
 /* ============================================================

@@ -8,6 +8,7 @@
 #include "data_model.h"
 #include "alarm.h"
 #include "comm.h"
+#include "events.h"
 #include "version.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -767,6 +768,164 @@ static void api_log(wsock_t s, const char *name)
     send_file(s, path);
 }
 
+/* ---- settings API (read/write config from the dashboard) --------------- */
+#define SETSTR(dst,src) do{ strncpy((dst),(src),sizeof(dst)-1); (dst)[sizeof(dst)-1]=0; }while(0)
+static int clampi(int x,int lo,int hi){ return x<lo?lo:(x>hi?hi:x); }
+
+/* GET /api/config - full configuration as JSON (passwords never sent) */
+static void api_config_get(wsock_t s)
+{
+    static char b[16384];
+    int o = 0;
+#define AP(...) o += snprintf(b + o, sizeof(b) - (size_t)o, __VA_ARGS__)
+    char ssid[80], port[64];
+    jesc(ssid, sizeof(ssid), g_cfg.wifi_ssid);
+    jesc(port, sizeof(port), g_cfg.port);
+    AP("{\"comm\":{\"source\":%d,\"port\":\"%s\",\"baud\":%d,\"cards\":%d,"
+       "\"slave_base\":%d,\"func\":%d,\"reg_base\":%d,\"word_order\":%d,\"fmt\":%d},",
+       g_cfg.source, port, g_cfg.baud, g_cfg.cards, g_cfg.slave_base,
+       g_cfg.func, g_cfg.reg_base, g_cfg.word_order, g_cfg.fmt);
+    AP("\"log\":{\"store_interval\":%d,\"retention_days\":%d},",
+       g_cfg.store_interval, g_cfg.retention_days);
+    AP("\"net\":{\"tcp_enable\":%d,\"tcp_port\":%d,\"tcp_unit\":%d,\"dhcp\":%d,"
+       "\"ip\":\"%s\",\"mask\":\"%s\",\"gw\":\"%s\",\"dns\":\"%s\"},",
+       g_cfg.tcp_enable, g_cfg.tcp_port, g_cfg.tcp_unit, g_cfg.net_dhcp,
+       g_cfg.net_ip, g_cfg.net_mask, g_cfg.net_gw, g_cfg.net_dns);
+    AP("\"wifi\":{\"enable\":%d,\"ssid\":\"%s\",\"haspass\":%d,\"dhcp\":%d,"
+       "\"ip\":\"%s\",\"mask\":\"%s\",\"gw\":\"%s\"},",
+       g_cfg.wifi_enable, ssid, g_cfg.wifi_pass[0] ? 1 : 0, g_cfg.wifi_dhcp,
+       g_cfg.wifi_ip, g_cfg.wifi_mask, g_cfg.wifi_gw);
+    AP("\"web\":{\"enable\":%d,\"port\":%d,\"auth\":%d,\"user\":\"%s\"},",
+       g_cfg.web_enable, g_cfg.web_port, g_cfg.web_auth, g_cfg.web_user);
+    AP("\"cfr\":{\"enable\":%d,\"esign\":%d,\"expiry\":%d},",
+       g_cfg.cfr_enable, g_cfg.esign_enable, g_cfg.pin_expiry_days);
+    AP("\"users\":[");
+    for (int i = 0; i < 8; i++) {
+        char nm[40];
+        jesc(nm, sizeof(nm), g_cfg.users[i].name);
+        AP("%s{\"name\":\"%s\",\"role\":%d,\"active\":%d,\"pinset\":%d}",
+           i ? "," : "", nm, g_cfg.users[i].role,
+           g_cfg.users[i].active, g_cfg.users[i].pin_set);
+    }
+    AP("],\"ch\":[");
+    data_lock();
+    for (int i = 0; i < CH_TOTAL; i++) {
+        char tg[24], un[16];
+        jesc(tg, sizeof(tg), g_ch[i].tag);
+        jesc(un, sizeof(un), g_ch[i].unit);
+        AP("%s{\"n\":%d,\"tag\":\"%s\",\"unit\":\"%s\",\"lo\":%g,\"hi\":%g,"
+           "\"almhi\":%g,\"almlo\":%g}", i ? "," : "", i + 1, tg, un,
+           (double)g_ch[i].lo, (double)g_ch[i].hi,
+           (double)g_ch[i].alm_hi, (double)g_ch[i].alm_lo);
+    }
+    data_unlock();
+    AP("]}");
+#undef AP
+    http_send(s, "200 OK", "application/json", b, (size_t)o);
+}
+
+/* apply one key=value pair to the running config (validated) */
+static void cfg_set(const char *k, const char *v)
+{
+    if (0) {}
+    /* logging */
+    else if (!strcmp(k, "store_interval")) g_cfg.store_interval = clampi(atoi(v), 60, 3600);
+    else if (!strcmp(k, "retention_days")) g_cfg.retention_days = clampi(atoi(v), 0, 36500);
+    /* data source / comm */
+    else if (!strcmp(k, "source"))     g_cfg.source     = atoi(v) ? SRC_MODBUS : SRC_SIM;
+    else if (!strcmp(k, "cards"))      g_cfg.cards      = clampi(atoi(v), 1, 5);
+    else if (!strcmp(k, "baud"))       g_cfg.baud       = clampi(atoi(v), 1200, 921600);
+    else if (!strcmp(k, "port"))       SETSTR(g_cfg.port, v);
+    else if (!strcmp(k, "slave_base")) g_cfg.slave_base = clampi(atoi(v), 1, 247);
+    else if (!strcmp(k, "func"))       g_cfg.func       = clampi(atoi(v), 3, 4);
+    else if (!strcmp(k, "reg_base"))   g_cfg.reg_base   = clampi(atoi(v), 0, 65535);
+    else if (!strcmp(k, "word_order")) g_cfg.word_order = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "fmt"))        g_cfg.fmt        = clampi(atoi(v), 0, 3);
+    /* network */
+    else if (!strcmp(k, "tcp_enable")) g_cfg.tcp_enable = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "tcp_port"))   g_cfg.tcp_port   = clampi(atoi(v), 1, 65535);
+    else if (!strcmp(k, "tcp_unit"))   g_cfg.tcp_unit   = clampi(atoi(v), 1, 247);
+    else if (!strcmp(k, "net_dhcp"))   g_cfg.net_dhcp   = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "net_ip"))     SETSTR(g_cfg.net_ip, v);
+    else if (!strcmp(k, "net_mask"))   SETSTR(g_cfg.net_mask, v);
+    else if (!strcmp(k, "net_gw"))     SETSTR(g_cfg.net_gw, v);
+    else if (!strcmp(k, "net_dns"))    SETSTR(g_cfg.net_dns, v);
+    /* wi-fi */
+    else if (!strcmp(k, "wifi_enable")) g_cfg.wifi_enable = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "wifi_ssid"))   SETSTR(g_cfg.wifi_ssid, v);
+    else if (!strcmp(k, "wifi_pass")) { if (*v) SETSTR(g_cfg.wifi_pass, v); }
+    else if (!strcmp(k, "wifi_dhcp"))   g_cfg.wifi_dhcp = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "wifi_ip"))     SETSTR(g_cfg.wifi_ip, v);
+    else if (!strcmp(k, "wifi_mask"))   SETSTR(g_cfg.wifi_mask, v);
+    else if (!strcmp(k, "wifi_gw"))     SETSTR(g_cfg.wifi_gw, v);
+    /* web */
+    else if (!strcmp(k, "web_enable")) g_cfg.web_enable = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "web_port"))   g_cfg.web_port   = clampi(atoi(v), 1, 65535);
+    else if (!strcmp(k, "web_auth"))   g_cfg.web_auth   = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "web_user")) { if (*v) SETSTR(g_cfg.web_user, v); }
+    else if (!strcmp(k, "web_pass")) { if (*v) SETSTR(g_cfg.web_pass, v); }
+    /* 21 CFR */
+    else if (!strcmp(k, "cfr_enable"))      g_cfg.cfr_enable      = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "esign_enable"))    g_cfg.esign_enable    = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "pin_expiry_days")) g_cfg.pin_expiry_days = clampi(atoi(v), 0, 3650);
+    /* users: user<0-7>_<field> */
+    else if (!strncmp(k, "user", 4) && k[4] >= '0' && k[4] <= '7' && k[5] == '_') {
+        cfr_user_t *u = &g_cfg.users[k[4] - '0'];
+        const char *f = k + 6;
+        if (!strcmp(f, "name"))        SETSTR(u->name, v);
+        else if (!strcmp(f, "role"))   u->role   = clampi(atoi(v), 0, 3);
+        else if (!strcmp(f, "active")) u->active = atoi(v) ? 1 : 0;
+        else if (!strcmp(f, "pin")) { if (*v) { SETSTR(u->pin, v); u->pin_set = (int)(time(NULL) / 86400); } }
+    }
+    /* channels: ch<0-39>_<field> */
+    else if (!strncmp(k, "ch", 2) && k[2] >= '0' && k[2] <= '9') {
+        int idx = atoi(k + 2);
+        const char *us = strchr(k, '_');
+        if (us && idx >= 0 && idx < CH_TOTAL) {
+            const char *f = us + 1;
+            channel_t *c = &g_ch[idx];
+            data_lock();
+            if (!strcmp(f, "tag"))        SETSTR(c->tag, v);
+            else if (!strcmp(f, "unit"))  SETSTR(c->unit, v);
+            else if (!strcmp(f, "lo"))    c->lo     = (float)atof(v);
+            else if (!strcmp(f, "hi"))    c->hi     = (float)atof(v);
+            else if (!strcmp(f, "almhi")) c->alm_hi = (float)atof(v);
+            else if (!strcmp(f, "almlo")) c->alm_lo = (float)atof(v);
+            data_unlock();
+        }
+    }
+}
+
+/* POST /api/config - form-encoded key=value pairs; validate, save, audit */
+static void api_config_post(wsock_t s, const char *req)
+{
+    const char *body = strstr(req, "\r\n\r\n");
+    if (!body) { http_send(s, "400 Bad Request", "application/json", "{\"ok\":false}", 12); return; }
+    body += 4;
+
+    int n = 0;
+    for (const char *p = body; p && *p; ) {
+        const char *amp = strchr(p, '&');
+        const char *eq  = strchr(p, '=');
+        if (eq && (!amp || eq < amp)) {
+            char key[48], rawv[192], val[192];
+            int kl = (int)(eq - p); if (kl > 47) kl = 47;
+            memcpy(key, p, (size_t)kl); key[kl] = 0;
+            const char *vs = eq + 1, *ve = amp ? amp : vs + strlen(vs);
+            int rl = (int)(ve - vs); if (rl > 191) rl = 191;
+            memcpy(rawv, vs, (size_t)rl); rawv[rl] = 0;
+            url_decode(val, rawv, sizeof(val));
+            cfg_set(key, val);
+            n++;
+        }
+        p = amp ? amp + 1 : NULL;
+    }
+    config_save();
+    event_log("CONFIG", "Web: %d setting%s updated (%s)",
+              n, n == 1 ? "" : "s", g_cfg.web_user);
+    http_send(s, "200 OK", "application/json", "{\"ok\":true}", 11);
+}
+
 /* ---- server thread ----------------------------------------------------- */
 
 /* ---- split-screen login page ------------------------------------------- */
@@ -921,8 +1080,21 @@ static void handle_client(wsock_t c)
     setsockopt(c, IPPROTO_TCP, TCP_NODELAY, (const char *)&yes,
                sizeof(yes));
 
-    char req[2048];
-    int n = (int)recv(c, req, sizeof(req) - 1, 0);
+    /* read headers, then the declared body (POST forms), up to the buffer */
+    char req[4096];
+    int n = 0;
+    while (n < (int)sizeof(req) - 1) {
+        int r = (int)recv(c, req + n, sizeof(req) - 1 - n, 0);
+        if (r <= 0) break;
+        n += r; req[n] = 0;
+        const char *he = strstr(req, "\r\n\r\n");
+        if (he) {
+            int hdr = (int)(he - req) + 4;
+            const char *cl = http_header(req, "content-length:");
+            int clen = cl ? atoi(cl) : 0;
+            if (n - hdr >= clen) break;      /* whole body received */
+        }
+    }
     if (n <= 0) { wsock_close(c); return; }
     req[n] = 0;
 
@@ -955,6 +1127,10 @@ static void handle_client(wsock_t c)
 
     if (!strcmp(path, "/api/logout"))
         api_logout(c, req);
+    else if (!strcmp(path, "/api/config")) {
+        if (!strcmp(method, "POST")) api_config_post(c, req);
+        else                          api_config_get(c);
+    }
     else if (!strcmp(path, "/") || !strcmp(path, "/index.html") ||
              !strcmp(path, "/login"))
         serve_dashboard(c);
