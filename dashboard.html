@@ -253,6 +253,18 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 .cfg-lock:hover{border-color:var(--acc);color:var(--acc)}
 .cfg-unlock h3{font-size:16px;margin-bottom:6px}
 .cfg-usub{color:var(--mut);font-size:13px;margin-bottom:16px;max-width:60ch}
+/* centered pop-up */
+.wpop-bg{position:fixed;inset:0;background:rgba(6,13,20,.74);display:flex;align-items:center;
+  justify-content:center;z-index:200;padding:20px}
+.wpop{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:30px 34px;
+  max-width:420px;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.55);animation:wpin .18s ease}
+.wpop.err{border-color:var(--alm)}
+@keyframes wpin{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+.wpop .ic{font-size:40px;margin-bottom:12px}
+.wpop .wmsg{font-size:17px;line-height:1.5;margin-bottom:22px;color:var(--ink)}
+.wpop button{background:var(--acc);color:#07131f;border:none;border-radius:9px;padding:11px 30px;
+  font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
+@media(prefers-reduced-motion:reduce){.wpop{animation:none}}
 
 /* ---------- empty state ---------- */
 .empty{background:var(--card);border:1px dashed var(--line);border-radius:12px;
@@ -1005,6 +1017,11 @@ function renderCfg(){
   const B=$("cfg-body"),tabs=$("cfg-tabs");
   if(!CFG.sess||!CFG.sess.unlocked){if(tabs)tabs.style.display="none";renderUnlock(B);return;}
   if(tabs)tabs.style.display="flex";
+  /* Users tab (accounts/PINs) is Admin+ only; a Supervisor never sees it */
+  const canUsers=!CFG.sess.cfr||CFG.sess.role>=2;
+  const utab=document.querySelector('#cfg-tabs .cfg-tab[data-g="users"]');
+  if(utab)utab.style.display=canUsers?"":"none";
+  if(cfgGroup==="users"&&!canUsers)cfgGroup="channels";
   document.querySelectorAll("#cfg-tabs .cfg-tab").forEach(t=>t.classList.toggle("on",t.dataset.g==cfgGroup));
   let h="";
   if(cfgGroup=="channels"){
@@ -1093,6 +1110,17 @@ function renderUnlock(B){
   $("ul_btn").onclick=doUnlock;
   const pf=$("ul_pin")||$("ul_pass");if(pf){pf.focus();pf.onkeydown=e=>{if(e.key==="Enter")doUnlock();};}
 }
+function wpopup(msg,ok){
+  const bg=document.createElement("div");bg.className="wpop-bg";
+  const box=document.createElement("div");box.className="wpop"+(ok?"":" err");
+  box.innerHTML=`<div class="ic">${ok?"&#9989;":"&#9940;"}</div>`+
+    `<div class="wmsg">${cesc(msg)}</div><button>OK</button>`;
+  bg.appendChild(box);
+  const close=()=>bg.remove();
+  box.querySelector("button").onclick=close;
+  bg.onclick=e=>{if(e.target===bg)close();};
+  document.body.appendChild(bg);box.querySelector("button").focus();
+}
 async function doUnlock(){
   const msg=$("ul_msg");msg.className="cfg-msg";msg.textContent="Checking…";
   const body=CFG.sess.cfr
@@ -1101,8 +1129,9 @@ async function doUnlock(){
   try{const r=await fetch("/api/settings/unlock",{method:"POST",
         headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
     const j=await r.json().catch(()=>({}));
-    if(r.ok&&j.ok){CFG=null;cfgGroup="channels";loadCfg(true);}
-    else{msg.className="cfg-msg err";msg.textContent=j.err||"Incorrect — try again";}
+    if(r.ok&&j.ok){CFG=null;cfgGroup="channels";loadCfg(true);return;}
+    if(j.err==="noaccess"){msg.textContent="";wpopup("You don't have access for this page.");return;}
+    msg.className="cfg-msg err";msg.textContent=j.err||"Incorrect — try again";
   }catch(e){msg.className="cfg-msg err";msg.textContent="Connection error";}
 }
 async function doLock(){try{await fetch("/api/settings/lock",{method:"POST"});}catch(e){}CFG=null;loadCfg(true);}

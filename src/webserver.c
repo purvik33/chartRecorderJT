@@ -823,14 +823,19 @@ static void api_config_get(wsock_t s, const char *req)
        g_cfg.web_enable, g_cfg.web_port, g_cfg.web_auth, g_cfg.web_user);
     AP("\"cfr\":{\"enable\":%d,\"esign\":%d,\"expiry\":%d},",
        g_cfg.cfr_enable, g_cfg.esign_enable, g_cfg.pin_expiry_days);
+    /* once unlocked as less than Admin (a Supervisor), the account list is
+     * hidden entirely - a Supervisor must not see the users or their PINs.
+     * (Still sent while locked so the login drop-down can list accounts.) */
+    int hide_users = unlocked && g_cfg.cfr_enable && ss && ss->cfr_role < ROLE_ADMIN;
     AP("\"users\":[");
-    for (int i = 0; i < 8; i++) {
-        char nm[40];
-        jesc(nm, sizeof(nm), g_cfg.users[i].name);
-        AP("%s{\"name\":\"%s\",\"role\":%d,\"active\":%d,\"pinset\":%d}",
-           i ? "," : "", nm, g_cfg.users[i].role,
-           g_cfg.users[i].active, g_cfg.users[i].pin_set);
-    }
+    if (!hide_users)
+        for (int i = 0; i < 8; i++) {
+            char nm[40];
+            jesc(nm, sizeof(nm), g_cfg.users[i].name);
+            AP("%s{\"name\":\"%s\",\"role\":%d,\"active\":%d,\"pinset\":%d}",
+               i ? "," : "", nm, g_cfg.users[i].role,
+               g_cfg.users[i].active, g_cfg.users[i].pin_set);
+        }
     AP("],\"ch\":[");
     data_lock();
     for (int i = 0; i < CH_TOTAL; i++) {
@@ -1009,6 +1014,13 @@ static void api_unlock(wsock_t s, const char *req)
                 (int)(now / 86400) - g_cfg.users[idx].pin_set > g_cfg.pin_expiry_days) {
                 event_log("CFR", "Web settings: PIN expired for %s", g_cfg.users[idx].name);
                 http_403(s, "{\"ok\":false,\"err\":\"PIN expired - change it on the device\"}");
+                return;
+            }
+            /* Operator (and any role below Supervisor) has no settings access */
+            if (g_cfg.users[idx].role < ROLE_SUPERVISOR) {
+                event_log("CFR", "Web settings: %s denied - no settings access",
+                          g_cfg.users[idx].name);
+                http_403(s, "{\"ok\":false,\"err\":\"noaccess\"}");
                 return;
             }
             ss->set_exp  = now + SET_TTL;
