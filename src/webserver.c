@@ -907,6 +907,7 @@ static void cfg_set(const char *k, const char *v)
     else if (!strcmp(k, "cfr_enable"))      g_cfg.cfr_enable      = atoi(v) ? 1 : 0;
     else if (!strcmp(k, "esign_enable"))    g_cfg.esign_enable    = atoi(v) ? 1 : 0;
     else if (!strcmp(k, "pin_expiry_days")) g_cfg.pin_expiry_days = clampi(atoi(v), 0, 3650);
+    else if (!strcmp(k, "manuf_pin"))     { if (*v) SETSTR(g_cfg.manuf_pin, v); }
     /* users: user<0-7>_<field> */
     else if (!strncmp(k, "user", 4) && k[4] >= '0' && k[4] <= '7' && k[5] == '_') {
         cfr_user_t *u = &g_cfg.users[k[4] - '0'];
@@ -942,7 +943,7 @@ static int is_factory_key(const char *k)
     return !strcmp(k,"source")||!strcmp(k,"cards")||!strcmp(k,"baud")||!strcmp(k,"port")||
            !strcmp(k,"slave_base")||!strcmp(k,"func")||!strcmp(k,"reg_base")||
            !strcmp(k,"word_order")||!strcmp(k,"fmt")||!strcmp(k,"cfr_enable")||
-           !strcmp(k,"esign_enable")||!strcmp(k,"pin_expiry_days");
+           !strcmp(k,"esign_enable")||!strcmp(k,"pin_expiry_days")||!strcmp(k,"manuf_pin");
 }
 
 /* minimum role a given setting key requires (used only in 21 CFR mode) */
@@ -1068,7 +1069,7 @@ static void api_unlock(wsock_t s, const char *req)
         form_field(body, "pass", pass, sizeof(pass));
         if (pass[0] && ct_eq(pass, g_cfg.factory_pin)) {
             ss->set_exp     = now + SET_TTL;
-            ss->factory_exp = now + SET_TTL;   /* the service pw is the factory pw */
+            ss->factory_exp = 0;   /* Factory settings still need the manufacturer password */
             ss->cfr_idx     = -1;
             ss->cfr_role    = ROLE_SUPERADMIN;
             event_log("CONFIG", "Web settings unlocked (service password)");
@@ -1100,13 +1101,13 @@ static void api_factory_unlock(wsock_t s, const char *req)
     body = body ? body + 4 : "";
     char pass[24] = "";
     form_field(body, "pass", pass, sizeof(pass));
-    if (pass[0] && ct_eq(pass, g_cfg.factory_pin)) {
+    if (pass[0] && ct_eq(pass, g_cfg.manuf_pin)) {
         ss->factory_exp = now + SET_TTL;
-        event_log("CONFIG", "Web: factory settings unlocked");
+        event_log("CONFIG", "Web: factory settings unlocked (manufacturer)");
         http_send(s, "200 OK", "application/json", "{\"ok\":true}", 11);
         return;
     }
-    event_log("CONFIG", "Web: factory settings - wrong password");
+    event_log("CONFIG", "Web: factory settings - wrong manufacturer password");
     http_send(s, "401 Unauthorized", "application/json", "{\"ok\":false}", 12);
 }
 

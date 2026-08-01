@@ -57,6 +57,7 @@ static void set_defaults(void)
     strcpy(g_cfg.wifi_mask, "255.255.255.0");
     strcpy(g_cfg.wifi_gw,   "192.168.1.1");
     strcpy(g_cfg.factory_pin, "1234");
+    strcpy(g_cfg.manuf_pin,   "1221");
     /* OTA update server defaults to the product's own GitHub repo so
      * every unit can check for updates out of the box */
     strcpy(g_cfg.update_repo, "purvik33/chartRecorderJT");
@@ -137,6 +138,7 @@ void config_load(void)
             else if (!strcmp(key, "wifi_mask"))      { strncpy(g_cfg.wifi_mask, val, sizeof(g_cfg.wifi_mask)-1); g_cfg.wifi_mask[sizeof(g_cfg.wifi_mask)-1] = 0; }
             else if (!strcmp(key, "wifi_gw"))        { strncpy(g_cfg.wifi_gw,   val, sizeof(g_cfg.wifi_gw)-1);   g_cfg.wifi_gw[sizeof(g_cfg.wifi_gw)-1] = 0; }
             else if (!strcmp(key, "factory_pin"))    { strncpy(g_cfg.factory_pin, val, sizeof(g_cfg.factory_pin)-1); g_cfg.factory_pin[sizeof(g_cfg.factory_pin)-1] = 0; }
+            else if (!strcmp(key, "manuf_pin"))      { strncpy(g_cfg.manuf_pin, val, sizeof(g_cfg.manuf_pin)-1); g_cfg.manuf_pin[sizeof(g_cfg.manuf_pin)-1] = 0; }
             else if (!strcmp(key, "web_enable"))     g_cfg.web_enable = atoi(val);
             else if (!strcmp(key, "web_port"))       g_cfg.web_port = atoi(val);
             else if (!strcmp(key, "web_auth"))       g_cfg.web_auth = atoi(val);
@@ -200,6 +202,7 @@ void config_load(void)
     if (!g_cfg.users[0].name[0] || !strcmp(g_cfg.users[0].name, "ADMIN"))
         strcpy(g_cfg.users[0].name, "SUPER ADMIN");
     if (!g_cfg.users[0].pin[0])  strcpy(g_cfg.users[0].pin,  "1234");
+    if (!g_cfg.manuf_pin[0])     strcpy(g_cfg.manuf_pin, "1221");   /* older config */
 
     /* start the PIN-aging clock for any active account that predates this
      * feature (pin_set == 0) so expiry is measured from now, not 1970 */
@@ -255,6 +258,7 @@ void config_save(void)
     fprintf(f, "wifi_mask=%s\n",   g_cfg.wifi_mask);
     fprintf(f, "wifi_gw=%s\n",     g_cfg.wifi_gw);
     fprintf(f, "factory_pin=%s\n", g_cfg.factory_pin);
+    fprintf(f, "manuf_pin=%s\n",   g_cfg.manuf_pin);
     fprintf(f, "\n[update]\n");
     fprintf(f, "update_repo=%s\n",  g_cfg.update_repo);
     fprintf(f, "update_token=%s\n", g_cfg.update_token);

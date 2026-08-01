@@ -61,7 +61,8 @@ typedef struct {
     char wifi_mask[20];
     char wifi_gw[20];
 
-    char factory_pin[12]; /* PIN protecting the Factory settings menu */
+    char factory_pin[12]; /* service password: gates the settings menu */
+    char manuf_pin[12];   /* manufacturer password: gates Factory settings (data source / 21 CFR) */
 
     /* OTA update: GitHub repo "owner/name" + token for private repos */
     char update_repo[64];

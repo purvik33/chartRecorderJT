@@ -1118,9 +1118,9 @@ function renderDisplay(B){
 }
 function renderFactoryGate(B){
   B.innerHTML=cfgHeader("factory")+
-    `<div class="cfg-unlock"><h3>Factory settings password</h3>`+
-    `<p class="cfg-usub">Factory settings (data source and 21 CFR mode) also require the service password, in addition to your Super Admin login.</p>`+
-    `<div class="cfg-grid" style="max-width:340px">`+fF("Service password","fu_pass","","password")+`</div>`+
+    `<div class="cfg-unlock"><h3>Manufacturer password</h3>`+
+    `<p class="cfg-usub">Factory settings are for the manufacturer. Enter the manufacturer password to change the data source or 21 CFR mode.</p>`+
+    `<div class="cfg-grid" style="max-width:340px">`+fF("Manufacturer password","fu_pass","","password")+`</div>`+
     `<div class="cfg-actions"><button class="cfg-save" id="fu_btn">Unlock factory settings</button><span class="cfg-msg" id="fu_msg"></span></div></div>`;
   const lb=$("cfg-lockbtn");if(lb)lb.onclick=doLock;
   const pf=$("fu_pass");if(pf){pf.focus();pf.onkeydown=e=>{if(e.key==="Enter")doFactoryUnlock();};}
@@ -1197,7 +1197,9 @@ function renderCfg(){
       rGroup("21 CFR Part 11")+
       rToggle("21 CFR Part 11 mode","Require an account login and audit every change","f_cfr",CFG.cfr.enable)+
       rToggle("E-signature on reports","Print an executed signature block on reports","f_esign",CFG.cfr.esign)+
-      rSelect("Default PIN expiry","Global PIN aging, used when a user has no individual expiry","f_expiry",CFG.cfr.expiry,[[0,"Never"],[30,"30 days"],[60,"60 days"],[90,"90 days"],[180,"180 days"],[365,"365 days"]]);
+      rSelect("Default PIN expiry","Global PIN aging, used when a user has no individual expiry","f_expiry",CFG.cfr.expiry,[[0,"Never"],[30,"30 days"],[60,"60 days"],[90,"90 days"],[180,"180 days"],[365,"365 days"]])+
+      rGroup("Manufacturer access")+
+      rInput("Change manufacturer password","Leave blank to keep the current one","f_manuf","","password");
   }else if(cfgGroup=="network"){
     warn="&#9888; A wrong network change can cut off access to the recorder. Changes apply after a restart.";
     inner=rGroup("Ethernet")+
@@ -1278,7 +1280,7 @@ async function saveCfg(){
     add("ch"+i+"_lo",$("f_lo").value);add("ch"+i+"_hi",$("f_hi").value);
     add("ch"+i+"_almhi",$("f_almhi").value);add("ch"+i+"_almlo",$("f_almlo").value);
   }else if(cfgGroup=="logging"){add("store_interval",$("f_si").value);add("retention_days",$("f_ret").value);}
-  else if(cfgGroup=="factory"){const tg=id=>$(id).classList.contains("on")?1:0;add("source",$("f_src").value);add("cards",$("f_cards").value);add("baud",$("f_baud").value);add("port",$("f_port").value);add("slave_base",$("f_slave").value);add("cfr_enable",tg("f_cfr"));add("esign_enable",tg("f_esign"));add("pin_expiry_days",$("f_expiry").value);}
+  else if(cfgGroup=="factory"){const tg=id=>$(id).classList.contains("on")?1:0;add("source",$("f_src").value);add("cards",$("f_cards").value);add("baud",$("f_baud").value);add("port",$("f_port").value);add("slave_base",$("f_slave").value);add("cfr_enable",tg("f_cfr"));add("esign_enable",tg("f_esign"));add("pin_expiry_days",$("f_expiry").value);if($("f_manuf")&&$("f_manuf").value)add("manuf_pin",$("f_manuf").value);}
   else if(cfgGroup=="network"){const tg=id=>$(id).classList.contains("on")?1:0;add("net_dhcp",$("f_ndhcp").value);add("net_ip",$("f_nip").value);add("net_mask",$("f_nmask").value);add("net_gw",$("f_ngw").value);add("net_dns",$("f_ndns").value);add("wifi_enable",tg("f_wen"));add("wifi_ssid",$("f_wssid").value);if($("f_wpass").value)add("wifi_pass",$("f_wpass").value);add("tcp_enable",tg("f_tcp"));add("tcp_port",$("f_tcpport").value);}
   else if(cfgGroup=="users"){CFG.users.forEach((u,i)=>{add("user"+i+"_name",$("u"+i+"_name").value);if(i>0){add("user"+i+"_role",$("u"+i+"_role").value);add("user"+i+"_active",$("u"+i+"_active").value);add("user"+i+"_expiry",$("u"+i+"_exp").value);}const pv=$("u"+i+"_pin").value;if(pv&&pv!==(u.pin||""))add("user"+i+"_pin",pv);});}
   try{const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:P.join("&")});
