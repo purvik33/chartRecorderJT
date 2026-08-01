@@ -256,6 +256,12 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 .cfg-group{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--mut);
   padding:22px 0 4px}
 .cfg-group:first-child{padding-top:8px}
+.subtabs{display:inline-flex;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  padding:4px;margin:14px 0 2px}
+.subtab{background:transparent;border:none;color:var(--mut);border-radius:7px;padding:7px 16px;font-size:13px;
+  font-weight:600;cursor:pointer;font-family:inherit;transition:background .15s,color .15s}
+.subtab:hover{color:var(--ink)}
+.subtab.on{background:var(--acc);color:#07131f}
 .row2{display:flex;justify-content:space-between;align-items:center;gap:26px;padding:15px 0;border-bottom:1px solid var(--line)}
 .row2:last-child{border-bottom:0}
 .rinfo{min-width:0}
@@ -1043,7 +1049,7 @@ function fillSettings(){
 }
 
 /* ---- editable configuration (reads/writes /api/config) ---- */
-let CFG=null, cfgGroup="channels", cfgChan=0, cfgInited=false;
+let CFG=null, cfgGroup="channels", cfgChan=0, cfgInited=false, netSub="ethernet";
 const EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const GMETA={
   channels:{t:"Channels & alarms",d:"Tag, engineering unit, range and Hi/Lo alarm setpoints for each measurement channel.",
@@ -1202,17 +1208,19 @@ function renderCfg(){
       rInput("Change manufacturer password","Leave blank to keep the current one","f_manuf","","password");
   }else if(cfgGroup=="network"){
     warn="&#9888; A wrong network change can cut off access to the recorder. Changes apply after a restart.";
-    inner=rGroup("Ethernet")+
-      rSelect("Addressing","How the wired address is assigned","f_ndhcp",CFG.net.dhcp,[[1,"DHCP (automatic)"],[0,"Static (manual)"]])+
+    const eth=rSelect("Addressing","How the wired address is assigned","f_ndhcp",CFG.net.dhcp,[[1,"DHCP (automatic)"],[0,"Static (manual)"]])+
       rInput("IP address","","f_nip",CFG.net.ip)+rInput("Subnet mask","","f_nmask",CFG.net.mask)+
-      rInput("Gateway","","f_ngw",CFG.net.gw)+rInput("DNS server","","f_ndns",CFG.net.dns)+
-      rGroup("Wi-Fi")+
-      rToggle("Wi-Fi","Enable the wireless interface","f_wen",CFG.wifi.enable)+
+      rInput("Gateway","","f_ngw",CFG.net.gw)+rInput("DNS server","","f_ndns",CFG.net.dns);
+    const wifi=rToggle("Wi-Fi","Enable the wireless interface","f_wen",CFG.wifi.enable)+
       rInput("Network name (SSID)","","f_wssid",CFG.wifi.ssid)+
-      rInput("Password",CFG.wifi.haspass?"A password is set — leave blank to keep it":"","f_wpass","","password")+
-      rGroup("Modbus TCP server")+
-      rToggle("Enabled","Serve live values to SCADA/PLC over Modbus TCP","f_tcp",CFG.net.tcp_enable)+
+      rInput("Password",CFG.wifi.haspass?"A password is set — leave blank to keep it":"","f_wpass","","password");
+    const tcp=rToggle("Enabled","Serve live values to SCADA/PLC over Modbus TCP","f_tcp",CFG.net.tcp_enable)+
       rInput("TCP port","","f_tcpport",CFG.net.tcp_port);
+    const sb=(id,lbl)=>`<button type="button" class="subtab${netSub===id?" on":""}" data-s="${id}">${lbl}</button>`;
+    inner=`<div class="subtabs">`+sb("ethernet","Ethernet")+sb("wifi","Wi-Fi")+sb("tcp","Modbus TCP")+`</div>`+
+      `<div class="netsec" data-sec="ethernet"${netSub==="ethernet"?"":" hidden"}>`+eth+`</div>`+
+      `<div class="netsec" data-sec="wifi"${netSub==="wifi"?"":" hidden"}>`+wifi+`</div>`+
+      `<div class="netsec" data-sec="tcp"${netSub==="tcp"?"":" hidden"}>`+tcp+`</div>`;
   }else if(cfgGroup=="users"){isUsers=true;}
 
   let html=cfgHeader(cfgGroup);
@@ -1226,6 +1234,9 @@ function renderCfg(){
   B.querySelectorAll(".tgl").forEach(b=>b.onclick=()=>b.classList.toggle("on"));
   B.querySelectorAll(".eye").forEach(b=>b.onclick=()=>{const inp=$(b.dataset.t);if(!inp)return;
     const show=inp.type==="password";inp.type=show?"text":"password";b.classList.toggle("on",show);});
+  B.querySelectorAll(".subtab").forEach(b=>b.onclick=()=>{netSub=b.dataset.s;
+    B.querySelectorAll(".subtab").forEach(x=>x.classList.toggle("on",x.dataset.s===netSub));
+    B.querySelectorAll(".netsec").forEach(x=>{x.hidden=(x.dataset.sec!==netSub);});});
 }
 function renderUnlock(B){
   const s=CFG.sess;let h;
