@@ -1,5 +1,5 @@
-/* comm_modbus.c - Modbus RTU master polling iAI_U8 cards over RS-485.
- * Portable serial: Win32 COM port or POSIX termios (USB-RS485 dongle
+/* comm_modbus.c - Modbus RTU master polling iAI_U8 cards over the Card link.
+ * Portable serial: Win32 COM port or POSIX termios (USB serial dongle
  * on Windows, /dev/ttyUSB0 on the Pi).
  *
  * Assumed card map (adjust reg_base/word_order in recorder.ini):
@@ -443,8 +443,8 @@ void *comm_modbus_thread(void *arg)
             static int prev_link = -1;
             if (any_ok != prev_link) {
                 if (prev_link != -1 || any_ok)
-                    event_log("COMM", any_ok ? "RS-485 link up"
-                                             : "RS-485 link down");
+                    event_log("COMM", any_ok ? "Card link up"
+                                             : "Card link down");
                 prev_link = any_ok;
             }
         }

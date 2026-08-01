@@ -1,4 +1,4 @@
-/* diag.c - self diagnostics: storage, clock, memory, RS-485 bus and
+/* diag.c - self diagnostics: storage, clock, memory, Card link and
  * every fitted AI card, Modbus TCP, network. All tests are bounded
  * (serial timeouts), so a run can never hang. */
 #include "diag.h"
@@ -109,11 +109,11 @@ int diag_run(void)
         else     add(it, &n, "Memory", DIAG_FAIL, "1 MB allocation failed");
     }
 
-    /* RS-485 bus + every fitted card */
+    /* Card link + every fitted card */
     if (g_cfg.source != SRC_MODBUS) {
-        add(it, &n, "RS-485 bus", DIAG_WARN, "demo mode - bus not in use");
+        add(it, &n, "Card link", DIAG_WARN, "demo mode - bus not in use");
     } else {
-        add(it, &n, "RS-485 bus", comm_link_ok() ? DIAG_OK : DIAG_FAIL,
+        add(it, &n, "Card link", comm_link_ok() ? DIAG_OK : DIAG_FAIL,
             comm_link_ok() ? "%s @ %d baud, link up"
                            : "%s @ %d baud, no link",
             g_cfg.port, g_cfg.baud);

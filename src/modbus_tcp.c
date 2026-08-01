@@ -1,4 +1,4 @@
-/* modbus_tcp.c - Modbus TCP server + transparent RS-485 gateway.
+/* modbus_tcp.c - Modbus TCP server + transparent Card link gateway.
  * Single thread, select() over the listener and up to 4 clients, so a
  * stalled client can never block the recorder. Register map and unit
  * id routing are described in modbus_tcp.h. */
@@ -194,7 +194,7 @@ static int process_pdu(int unit, const uint8_t *pdu, int plen, uint8_t *rsp)
     if (plen < 1) return 0;
     uint8_t fc = pdu[0];
 
-    /* ---- gateway: forward to an AI card over RS-485 ---- */
+    /* ---- gateway: forward to an AI card over the Card link ---- */
     /* the configured local unit always serves the recorder's own map,
      * even when tcp_unit falls inside the gateway range 11..15 */
     if (unit != g_cfg.tcp_unit &&

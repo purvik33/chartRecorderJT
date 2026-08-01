@@ -1,6 +1,6 @@
 /* comm.h - data acquisition thread.
  * Source is selected by g_cfg.source: built-in simulator, or Modbus RTU
- * master polling iAI_U8 cards over RS-485 (COMx / /dev/ttyUSB0). */
+ * master polling iAI_U8 cards over the Card link (COMx / /dev/ttyUSB0). */
 #ifndef COMM_H
 #define COMM_H
 
@@ -21,7 +21,7 @@ int  mb_service_write(int slave, int addr, uint16_t val);   /* FC06 */
  * per-channel sensor names shown in the UI */
 void comm_refresh_types(int card);
 
-/* Change the baud rate of the whole RS-485 bus in one action:
+/* Change the baud rate of the whole Card link in one action:
  * program every fitted card (HR201 + save key) at the current baud,
  * then reopen the recorder's own port at the new rate and verify each
  * card answers there. Returns the number of cards verified at the new

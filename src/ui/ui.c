@@ -226,7 +226,7 @@ static void group_cb(lv_event_t *e)
 }
 
 static lv_obj_t *lbl_alarm;
-static lv_obj_t *rs_ic;      /* RS-485 bus link icon (multidrop) */
+static lv_obj_t *rs_ic;      /* Card link icon (multidrop) */
 
 static void splash_timer_cb(lv_timer_t *t)
 {
@@ -647,7 +647,7 @@ static void build_root(void)
     lv_obj_set_style_text_color(lbl_clock, COL_MUTED, 0);
     lv_obj_align(lbl_clock, LV_ALIGN_RIGHT_MID, -12, 0);
 
-    /* RS-485 bus link icon: a multidrop trunk with three nodes */
+    /* Card link icon: a multidrop trunk with three nodes */
     rs_ic = lv_obj_create(bar);
     lv_obj_remove_style_all(rs_ic);
     lv_obj_set_size(rs_ic, 22, 14);

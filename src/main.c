@@ -121,7 +121,7 @@ int main(int argc, char **argv)
     ui_init();
     comm_init();       /* demo data or Modbus RTU thread per config */
     logger_init();     /* data storage thread */
-    modbus_tcp_init(); /* Modbus TCP server + RS-485 gateway thread */
+    modbus_tcp_init(); /* Modbus TCP server + Card link gateway thread */
     webserver_init();  /* read-only dashboard + CSV download        */
     diag_boot();       /* boot self test (background, results in log) */
     event_log("SYSTEM", "Logging started; interval %d s",

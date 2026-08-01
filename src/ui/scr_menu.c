@@ -757,7 +757,7 @@ static void build_comm_form(void)
 
     char b[16];
     dd_src   = form_dd(form_row("Data source"),
-                       "Demo mode\nInput cards (RS-485)", g_cfg.source);
+                       "Demo mode\nInput cards (Card link)", g_cfg.source);
     ta_port  = form_ta(form_row("Port"), g_cfg.port);
     dd_baud  = form_dd(form_row("Baud rate"),
                        "9600\n19200\n38400\n57600\n115200", bsel);
@@ -898,7 +898,7 @@ static void build_network_form(void)
         "Static IP fields are used when Address mode is Static."
         " The same port carries internet access when the gateway and"
         " DNS are set. Writes from SCADA to card parameters (unit 11+)"
-        " are forwarded to the cards over RS-485 automatically.");
+        " are forwarded to the cards over the Card link automatically.");
     lv_obj_set_style_text_color(note, COL_MUTED, 0);
     lv_obj_set_style_text_font(note, &font_units_12, 0);
     lv_obj_set_width(note, LV_PCT(100));

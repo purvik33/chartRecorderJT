@@ -1,9 +1,9 @@
-/* modbus_tcp.h - Modbus TCP server + transparent RS-485 gateway.
+/* modbus_tcp.h - Modbus TCP server + transparent Card link gateway.
  *
  * Unit id routing:
  *   g_cfg.tcp_unit (default 1) = the recorder's own register map
  *   11..15                     = direct gateway to AI card 1..5:
- *                                the PDU is forwarded over RS-485 to
+ *                                the PDU is forwarded over the Card link to
  *                                slave (slave_base + N - 1), so every
  *                                card parameter readable/writable on
  *                                the RTU bus is also available on TCP.
@@ -14,7 +14,7 @@
  *     100..179 PV float32, 2 regs/channel, word order per config
  *     200..239 channel status: 0 OK, 1 ALM HI, 2 ALM LO, 3 SKIP,
  *              4 UNDER, 5 OVER, 6 OPEN, 7 COMM
- *     240 RS-485 link (0/1), 241 active alarms, 242 unack alarms,
+ *     240 Card link (0/1), 241 active alarms, 242 unack alarms,
  *     243 store interval s, 244 cards fitted
  *   Holding registers (FC03, writable FC06/FC16):
  *     0..39    alarm HIGH setpoint x10 per channel
