@@ -241,6 +241,9 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
   padding:5px 11px;font-size:12px;cursor:pointer;font-family:inherit}
 .cfg-lock:hover{border-color:var(--acc);color:var(--acc)}
 .cfg-inner{padding:4px 24px}
+.cfg-group{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--mut);
+  padding:22px 0 4px}
+.cfg-group:first-child{padding-top:8px}
 .row2{display:flex;justify-content:space-between;align-items:center;gap:26px;padding:15px 0;border-bottom:1px solid var(--line)}
 .row2:last-child{border-bottom:0}
 .rinfo{min-width:0}
@@ -486,8 +489,7 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
           <div class="cfg-tab on" data-g="channels"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Channels &amp; alarms</div>
           <div class="cfg-tab" data-g="logging"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg>Logging</div>
           <div class="cfg-tab" data-g="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</div>
-          <div class="cfg-tab" data-g="source"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>Data source</div>
-          <div class="cfg-tab" data-g="cfr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V5z"/><path d="M9 12l2 2 4-4"/></svg>21 CFR Part 11</div>
+          <div class="cfg-tab" data-g="factory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Factory settings</div>
           <div class="cfg-tab" data-g="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M21 20c0-2.4-1.3-4.5-3.3-5.4"/></svg>User accounts</div>
         </div>
         <div class="set2-main" id="cfg-body">Loading&hellip;</div>
@@ -1058,7 +1060,9 @@ const GMETA={
   cfr:{t:"21 CFR Part 11",d:"Compliance mode, electronic signatures on reports and the default PIN-aging policy.",
     ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V5z"/><path d="M9 12l2 2 4-4"/></svg>'},
   users:{t:"User accounts",d:"Recorder accounts, roles, PINs and per-user PIN expiry. Super Admin & Admin only.",
-    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M21 20c0-2.4-1.3-4.5-3.3-5.4"/></svg>'}
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M21 20c0-2.4-1.3-4.5-3.3-5.4"/></svg>'},
+  factory:{t:"Factory settings",d:"Data source and 21 CFR Part 11 compliance mode. Super Admin only.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>'}
 };
 function cfgHead(g){const m=GMETA[g];if(!m)return"";
   return `<div class="cfg-head"><div class="cfg-hic">${m.ic}</div><div><div class="cfg-ht">${m.t}</div><div class="cfg-hd">${cesc(m.d)}</div></div></div>`;}
@@ -1102,6 +1106,7 @@ function cfgHeader(g){
     `<div style="flex:1;min-width:0"><div class="cfg-ht">${m.t}</div><div class="cfg-hd">${cesc(m.d)}</div></div>`+
     `<div class="cfg-whochip">&#128275; ${cesc(who)}<button class="cfg-lock" id="cfg-lockbtn">Lock</button></div></div>`;
 }
+function rGroup(t){return `<div class="cfg-group">${t}</div>`;}
 function cfgFoot(){return `<div class="cfg-foot"><button class="cfg-save" id="cfg-savebtn">Save changes</button><span class="cfg-msg" id="cfg-msg"></span></div>`;}
 function usersTable(){
   const ROLES=[[0,"Operator"],[1,"Supervisor"],[2,"Admin"],[3,"Super admin"]];
@@ -1125,9 +1130,13 @@ function renderCfg(){
   const B=$("cfg-body"),nav=$("cfg-tabs"),wrap=$("cfg-wrap");
   if(!CFG.sess||!CFG.sess.unlocked){if(nav)nav.style.display="none";if(wrap)wrap.style.gridTemplateColumns="1fr";renderUnlock(B);return;}
   if(nav)nav.style.display="";if(wrap)wrap.style.gridTemplateColumns="";
-  const canUsers=!CFG.sess.cfr||CFG.sess.role>=2;
+  /* Users tab: only when 21 CFR is on and you're Admin+.  Factory settings
+     (data source + 21 CFR switch): Super Admin only. */
+  const canUsers=CFG.sess.cfr&&CFG.sess.role>=2;
+  const canFactory=CFG.sess.role>=3;
   const utab=nav&&nav.querySelector('[data-g="users"]');if(utab)utab.style.display=canUsers?"":"none";
-  if(cfgGroup==="users"&&!canUsers)cfgGroup="channels";
+  const ftab=nav&&nav.querySelector('[data-g="factory"]');if(ftab)ftab.style.display=canFactory?"":"none";
+  if((cfgGroup==="users"&&!canUsers)||(cfgGroup==="factory"&&!canFactory))cfgGroup="channels";
   if(nav)nav.querySelectorAll(".cfg-tab").forEach(t=>t.classList.toggle("on",t.dataset.g==cfgGroup));
 
   let inner="",warn="",chan="",isUsers=false;
@@ -1143,13 +1152,18 @@ function renderCfg(){
   }else if(cfgGroup=="logging"){
     inner=rSelect("Store interval","How often a sample is written to storage","f_si",CFG.log.store_interval,[[60,"1 minute"],[300,"5 minutes"],[600,"10 minutes"],[900,"15 minutes"],[1800,"30 minutes"],[3600,"1 hour"]])+
       rSelect("Keep data","How long recorded history is retained","f_ret",CFG.log.retention_days,[[90,"90 days"],[365,"1 year"],[730,"2 years"],[1825,"5 years"],[3650,"10 years"],[0,"Until disk full"]]);
-  }else if(cfgGroup=="source"){
+  }else if(cfgGroup=="factory"){
     warn="Data source and card count take effect after the recorder restarts.";
-    inner=rSelect("Data source","Demo data, or live measurement cards","f_src",CFG.comm.source,[[0,"Demo mode"],[1,"Input cards (Card link)"]])+
+    inner=rGroup("Data source")+
+      rSelect("Data source","Demo data, or live measurement cards","f_src",CFG.comm.source,[[0,"Demo mode"],[1,"Input cards (Card link)"]])+
       rSelect("Cards fitted","Number of acquisition cards","f_cards",CFG.comm.cards,[[1,"1"],[2,"2"],[3,"3"],[4,"4"],[5,"5"]])+
       rSelect("Baud rate","Card link speed","f_baud",CFG.comm.baud,[[9600,"9600"],[19200,"19200"],[38400,"38400"],[57600,"57600"],[115200,"115200"]])+
       rInput("Port","Serial device path","f_port",CFG.comm.port)+
-      rSelect("Slave base id","Address of the first card","f_slave",CFG.comm.slave_base,Array.from({length:10},(_,i)=>[i+1,String(i+1)]));
+      rSelect("Slave base id","Address of the first card","f_slave",CFG.comm.slave_base,Array.from({length:10},(_,i)=>[i+1,String(i+1)]))+
+      rGroup("21 CFR Part 11")+
+      rToggle("21 CFR Part 11 mode","Require an account login and audit every change","f_cfr",CFG.cfr.enable)+
+      rToggle("E-signature on reports","Print an executed signature block on reports","f_esign",CFG.cfr.esign)+
+      rSelect("Default PIN expiry","Global PIN aging, used when a user has no individual expiry","f_expiry",CFG.cfr.expiry,[[0,"Never"],[30,"30 days"],[60,"60 days"],[90,"90 days"],[180,"180 days"],[365,"365 days"]]);
   }else if(cfgGroup=="network"){
     warn="&#9888; A wrong network change can cut off access to the recorder. Changes apply after a restart.";
     inner=rSelect("Ethernet","Address assignment","f_ndhcp",CFG.net.dhcp,[[1,"DHCP (automatic)"],[0,"Static"]])+
@@ -1160,10 +1174,6 @@ function renderCfg(){
       rInput("Wi-Fi password",CFG.wifi.haspass?"A password is set — leave blank to keep it":"","f_wpass","","password")+
       rToggle("Modbus TCP server","Serve live values over Modbus TCP","f_tcp",CFG.net.tcp_enable)+
       rInput("TCP port","","f_tcpport",CFG.net.tcp_port);
-  }else if(cfgGroup=="cfr"){
-    inner=rToggle("21 CFR Part 11 mode","Require an account login and audit every change","f_cfr",CFG.cfr.enable)+
-      rToggle("E-signature on reports","Print an executed signature block on reports","f_esign",CFG.cfr.esign)+
-      rSelect("Default PIN expiry","Global PIN aging, used when a user has no individual expiry","f_expiry",CFG.cfr.expiry,[[0,"Never"],[30,"30 days"],[60,"60 days"],[90,"90 days"],[180,"180 days"],[365,"365 days"]]);
   }else if(cfgGroup=="users"){isUsers=true;}
 
   let html=cfgHeader(cfgGroup);
@@ -1231,9 +1241,8 @@ async function saveCfg(){
     add("ch"+i+"_lo",$("f_lo").value);add("ch"+i+"_hi",$("f_hi").value);
     add("ch"+i+"_almhi",$("f_almhi").value);add("ch"+i+"_almlo",$("f_almlo").value);
   }else if(cfgGroup=="logging"){add("store_interval",$("f_si").value);add("retention_days",$("f_ret").value);}
-  else if(cfgGroup=="source"){add("source",$("f_src").value);add("cards",$("f_cards").value);add("baud",$("f_baud").value);add("port",$("f_port").value);add("slave_base",$("f_slave").value);}
+  else if(cfgGroup=="factory"){const tg=id=>$(id).classList.contains("on")?1:0;add("source",$("f_src").value);add("cards",$("f_cards").value);add("baud",$("f_baud").value);add("port",$("f_port").value);add("slave_base",$("f_slave").value);add("cfr_enable",tg("f_cfr"));add("esign_enable",tg("f_esign"));add("pin_expiry_days",$("f_expiry").value);}
   else if(cfgGroup=="network"){const tg=id=>$(id).classList.contains("on")?1:0;add("net_dhcp",$("f_ndhcp").value);add("net_ip",$("f_nip").value);add("net_mask",$("f_nmask").value);add("net_gw",$("f_ngw").value);add("net_dns",$("f_ndns").value);add("wifi_enable",tg("f_wen"));add("wifi_ssid",$("f_wssid").value);if($("f_wpass").value)add("wifi_pass",$("f_wpass").value);add("tcp_enable",tg("f_tcp"));add("tcp_port",$("f_tcpport").value);}
-  else if(cfgGroup=="cfr"){const tg=id=>$(id).classList.contains("on")?1:0;add("cfr_enable",tg("f_cfr"));add("esign_enable",tg("f_esign"));add("pin_expiry_days",$("f_expiry").value);}
   else if(cfgGroup=="users"){CFG.users.forEach((u,i)=>{add("user"+i+"_name",$("u"+i+"_name").value);if(i>0){add("user"+i+"_role",$("u"+i+"_role").value);add("user"+i+"_active",$("u"+i+"_active").value);add("user"+i+"_expiry",$("u"+i+"_exp").value);}const pv=$("u"+i+"_pin").value;if(pv&&pv!==(u.pin||""))add("user"+i+"_pin",pv);});}
   try{const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:P.join("&")});
     if(r.ok){msg.className="cfg-msg ok";msg.textContent="Saved ✓";setTimeout(()=>loadCfg(true),500);return;}
