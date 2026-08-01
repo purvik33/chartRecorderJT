@@ -245,6 +245,14 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 .cfg-utbl td{padding:6px 8px;border-bottom:1px solid var(--line)}
 .cfg-utbl input,.cfg-utbl select{background:var(--bg);border:1px solid var(--line);border-radius:6px;
   color:var(--ink);padding:6px 8px;font-size:13px;width:100%;font-family:inherit;outline:none}
+.cfg-who{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--bg);
+  border:1px solid var(--line);border-radius:9px;padding:9px 14px;margin-bottom:16px;font-size:13px;color:var(--mut)}
+.cfg-who b{color:var(--ink)}
+.cfg-lock{background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:7px;
+  padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.cfg-lock:hover{border-color:var(--acc);color:var(--acc)}
+.cfg-unlock h3{font-size:16px;margin-bottom:6px}
+.cfg-usub{color:var(--mut);font-size:13px;margin-bottom:16px;max-width:60ch}
 
 /* ---------- empty state ---------- */
 .empty{background:var(--card);border:1px dashed var(--line);border-radius:12px;
@@ -989,8 +997,11 @@ async function loadCfg(force){
 }
 function renderCfg(){
   if(!CFG){loadCfg();return;}
+  const B=$("cfg-body"),tabs=$("cfg-tabs");
+  if(!CFG.sess||!CFG.sess.unlocked){if(tabs)tabs.style.display="none";renderUnlock(B);return;}
+  if(tabs)tabs.style.display="flex";
   document.querySelectorAll("#cfg-tabs .cfg-tab").forEach(t=>t.classList.toggle("on",t.dataset.g==cfgGroup));
-  const B=$("cfg-body");let h="";
+  let h="";
   if(cfgGroup=="channels"){
     if(cfgChan>=CFG.ch.length)cfgChan=0;
     const c=CFG.ch[cfgChan];
@@ -1045,10 +1056,51 @@ function renderCfg(){
     });
     h+=`</table>`+cfgActions();
   }
-  B.innerHTML=h;
+  B.innerHTML=cfgWho()+h;
+  const lb=$("cfg-lockbtn");if(lb)lb.onclick=doLock;
   const chsel=$("cfg-ch");if(chsel)chsel.onchange=()=>{cfgChan=+chsel.value;renderCfg();};
   const sb=$("cfg-savebtn");if(sb)sb.onclick=saveCfg;
 }
+function cfgWho(){
+  const s=CFG.sess,roles=["Operator","Supervisor","Admin","Super admin"];
+  const who=s.cfr?(s.name||"user"):"service password";
+  const rl=(s.cfr&&s.role>=0)?(" · "+(roles[s.role]||"")):"";
+  return `<div class="cfg-who"><span>&#128275; Settings unlocked — <b>${cesc(who)}</b>${rl}</span>`+
+    `<button class="cfg-lock" id="cfg-lockbtn">Lock</button></div>`;
+}
+function renderUnlock(B){
+  const s=CFG.sess;let h;
+  if(s.cfr){
+    const opts=[];CFG.users.forEach((u,i)=>{if(u.active)opts.push([i,u.name||("User "+(i+1))]);});
+    h=`<div class="cfg-unlock"><h3>Sign in to change settings</h3>`+
+      `<p class="cfg-usub">21 CFR Part 11 mode is on — log in with your recorder account. Every change is recorded against your name.</p>`+
+      `<div class="cfg-grid" style="max-width:520px">`+
+      fSel("User","ul_user",opts.length?opts[0][0]:0,opts.length?opts:[[0,"(no active users)"]])+
+      fF("PIN","ul_pin","","password")+`</div>`+
+      `<div class="cfg-actions"><button class="cfg-save" id="ul_btn">Unlock</button><span class="cfg-msg" id="ul_msg"></span></div></div>`;
+  }else{
+    h=`<div class="cfg-unlock"><h3>Enter the settings password</h3>`+
+      `<p class="cfg-usub">Changing settings requires the service password (the same one that protects Factory settings on the recorder).</p>`+
+      `<div class="cfg-grid" style="max-width:340px">`+fF("Service password","ul_pass","","password")+`</div>`+
+      `<div class="cfg-actions"><button class="cfg-save" id="ul_btn">Unlock</button><span class="cfg-msg" id="ul_msg"></span></div></div>`;
+  }
+  B.innerHTML=h;
+  $("ul_btn").onclick=doUnlock;
+  const pf=$("ul_pin")||$("ul_pass");if(pf){pf.focus();pf.onkeydown=e=>{if(e.key==="Enter")doUnlock();};}
+}
+async function doUnlock(){
+  const msg=$("ul_msg");msg.className="cfg-msg";msg.textContent="Checking…";
+  const body=CFG.sess.cfr
+    ?("user="+encodeURIComponent($("ul_user").value)+"&pin="+encodeURIComponent($("ul_pin").value))
+    :("pass="+encodeURIComponent($("ul_pass").value));
+  try{const r=await fetch("/api/settings/unlock",{method:"POST",
+        headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.ok){CFG=null;cfgGroup="channels";loadCfg(true);}
+    else{msg.className="cfg-msg err";msg.textContent=j.err||"Incorrect — try again";}
+  }catch(e){msg.className="cfg-msg err";msg.textContent="Connection error";}
+}
+async function doLock(){try{await fetch("/api/settings/lock",{method:"POST"});}catch(e){}CFG=null;loadCfg(true);}
 async function saveCfg(){
   const msg=$("cfg-msg");msg.className="cfg-msg";msg.textContent="Saving…";
   const P=[],add=(k,v)=>P.push(k+"="+encodeURIComponent(v));
@@ -1062,8 +1114,12 @@ async function saveCfg(){
   else if(cfgGroup=="cfr"){add("cfr_enable",$("f_cfr").value);add("esign_enable",$("f_esign").value);add("pin_expiry_days",$("f_expiry").value);}
   else if(cfgGroup=="users"){CFG.users.forEach((u,i)=>{add("user"+i+"_name",$("u"+i+"_name").value);if(i>0){add("user"+i+"_role",$("u"+i+"_role").value);add("user"+i+"_active",$("u"+i+"_active").value);}const pv=$("u"+i+"_pin").value;if(pv)add("user"+i+"_pin",pv);});}
   try{const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:P.join("&")});
-    if(!r.ok)throw 0;msg.className="cfg-msg ok";msg.textContent="Saved ✓";
-    setTimeout(()=>loadCfg(true),500);
+    if(r.ok){msg.className="cfg-msg ok";msg.textContent="Saved ✓";setTimeout(()=>loadCfg(true),500);return;}
+    const j=await r.json().catch(()=>({}));
+    if(j.need==="unlock"){msg.className="cfg-msg err";msg.textContent="Session locked — sign in again";
+      setTimeout(()=>{CFG=null;loadCfg(true);},1000);}
+    else if(j.need==="role"){msg.className="cfg-msg err";msg.textContent="Your role can't change these settings";}
+    else{msg.className="cfg-msg err";msg.textContent="Save failed";}
   }catch(e){msg.className="cfg-msg err";msg.textContent="Save failed";}
 }
 

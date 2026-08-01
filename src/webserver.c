@@ -9,6 +9,7 @@
 #include "alarm.h"
 #include "comm.h"
 #include "events.h"
+#include "users.h"
 #include "version.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -449,7 +450,14 @@ static const char *http_header(const char *req, const char *name)
 /* ---- sessions: a small fixed table of random tokens -------------------- */
 #define SESS_MAX 8
 #define SESS_TTL (30*24*3600)    /* 30 days; refreshed (slid) on each request */
-typedef struct { char tok[33]; time_t exp; } sess_t;
+#define SET_TTL  600             /* settings stay unlocked 10 min after auth */
+typedef struct {
+    char   tok[33];
+    time_t exp;
+    time_t set_exp;              /* settings unlocked until (0 = locked) */
+    int    cfr_idx;              /* 21 CFR user idx that unlocked, -1 = service */
+    int    cfr_role;             /* role granted for settings */
+} sess_t;
 static sess_t sessions[SESS_MAX];
 
 static void gen_token(char out[33])
@@ -479,7 +487,10 @@ static void sess_create(char out[33])
             if (sessions[i].exp < sessions[slot].exp) slot = i;
     }
     memcpy(sessions[slot].tok, out, 33);
-    sessions[slot].exp = now + SESS_TTL;
+    sessions[slot].exp     = now + SESS_TTL;
+    sessions[slot].set_exp = 0;
+    sessions[slot].cfr_idx = -1;
+    sessions[slot].cfr_role = 0;
 }
 
 /* pull the 'sid' cookie (32 hex chars) out of a Cookie header value */
@@ -498,22 +509,23 @@ static void cookie_sid(const char *ck, char out[33])
     }
 }
 
-static int sess_valid(const char *req)
+static sess_t *sess_find(const char *req)
 {
     const char *ck = http_header(req, "cookie:");
-    if (!ck) return 0;
+    if (!ck) return NULL;
     char tok[33];
     cookie_sid(ck, tok);
-    if (!tok[0]) return 0;
+    if (!tok[0]) return NULL;
     time_t now = time(NULL);
     for (int i = 0; i < SESS_MAX; i++)
         if (sessions[i].tok[0] && sessions[i].exp >= now &&
             ct_eq(sessions[i].tok, tok)) {
             sessions[i].exp = now + SESS_TTL;        /* sliding expiry */
-            return 1;
+            return &sessions[i];
         }
-    return 0;
+    return NULL;
 }
+static int sess_valid(const char *req) { return sess_find(req) != NULL; }
 
 static void sess_drop(const char *req)
 {
@@ -615,6 +627,11 @@ static void api_logout(wsock_t s, const char *req)
 static void http_401(wsock_t s)
 {
     http_send(s, "401 Unauthorized", "application/json", "{\"auth\":0}", 10);
+}
+
+static void http_403(wsock_t s, const char *json)
+{
+    http_send(s, "403 Forbidden", "application/json", json, strlen(json));
 }
 
 /* stream a log file with a download-friendly header */
@@ -773,15 +790,22 @@ static void api_log(wsock_t s, const char *name)
 static int clampi(int x,int lo,int hi){ return x<lo?lo:(x>hi?hi:x); }
 
 /* GET /api/config - full configuration as JSON (passwords never sent) */
-static void api_config_get(wsock_t s)
+static void api_config_get(wsock_t s, const char *req)
 {
     static char b[16384];
     int o = 0;
 #define AP(...) o += snprintf(b + o, sizeof(b) - (size_t)o, __VA_ARGS__)
-    char ssid[80], port[64];
+    sess_t *ss = sess_find(req);
+    time_t now = time(NULL);
+    int unlocked = (ss && ss->set_exp >= now) ? 1 : 0;
+    char ssid[80], port[64], uname[40];
     jesc(ssid, sizeof(ssid), g_cfg.wifi_ssid);
     jesc(port, sizeof(port), g_cfg.port);
-    AP("{\"comm\":{\"source\":%d,\"port\":\"%s\",\"baud\":%d,\"cards\":%d,"
+    jesc(uname, sizeof(uname),
+         (unlocked && ss->cfr_idx >= 0) ? g_cfg.users[ss->cfr_idx].name : "");
+    AP("{\"sess\":{\"cfr\":%d,\"unlocked\":%d,\"role\":%d,\"name\":\"%s\"},",
+       g_cfg.cfr_enable ? 1 : 0, unlocked, unlocked ? ss->cfr_role : -1, uname);
+    AP("\"comm\":{\"source\":%d,\"port\":\"%s\",\"baud\":%d,\"cards\":%d,"
        "\"slave_base\":%d,\"func\":%d,\"reg_base\":%d,\"word_order\":%d,\"fmt\":%d},",
        g_cfg.source, port, g_cfg.baud, g_cfg.cards, g_cfg.slave_base,
        g_cfg.func, g_cfg.reg_base, g_cfg.word_order, g_cfg.fmt);
@@ -896,12 +920,49 @@ static void cfg_set(const char *k, const char *v)
     }
 }
 
-/* POST /api/config - form-encoded key=value pairs; validate, save, audit */
+/* minimum role a given setting key requires (used only in 21 CFR mode) */
+static int key_role(const char *k)
+{
+    if (!strncmp(k, "user", 4)) return ROLE_ADMIN;             /* accounts */
+    if (!strcmp(k,"source")||!strcmp(k,"cards")||!strcmp(k,"baud")||
+        !strcmp(k,"port")||!strcmp(k,"slave_base")||!strcmp(k,"func")||
+        !strcmp(k,"reg_base")||!strcmp(k,"word_order")||!strcmp(k,"fmt")||
+        !strcmp(k,"cfr_enable")||!strcmp(k,"esign_enable")||
+        !strcmp(k,"pin_expiry_days")||!strncmp(k,"web_",4))
+        return ROLE_SUPERADMIN;                               /* factory */
+    return ROLE_SUPERVISOR;                                   /* channels/log/net */
+}
+
+/* POST /api/config - requires the session to be settings-unlocked first;
+ * in 21 CFR mode the unlocked user's role must cover every changed key. */
 static void api_config_post(wsock_t s, const char *req)
 {
+    sess_t *ss = sess_find(req);
+    time_t now = time(NULL);
+    if (!ss) { http_401(s); return; }
+    if (ss->set_exp < now) { http_403(s, "{\"ok\":false,\"need\":\"unlock\"}"); return; }
+
     const char *body = strstr(req, "\r\n\r\n");
     if (!body) { http_send(s, "400 Bad Request", "application/json", "{\"ok\":false}", 12); return; }
     body += 4;
+
+    /* required role = highest across every key in this request */
+    int need = ROLE_SUPERVISOR;
+    for (const char *p = body; p && *p; ) {
+        const char *amp = strchr(p, '&'), *eq = strchr(p, '=');
+        if (eq && (!amp || eq < amp)) {
+            char key[48]; int kl = (int)(eq - p); if (kl > 47) kl = 47;
+            memcpy(key, p, (size_t)kl); key[kl] = 0;
+            int r = key_role(key); if (r > need) need = r;
+        }
+        p = amp ? amp + 1 : NULL;
+    }
+    if (g_cfg.cfr_enable && ss->cfr_role < need) {
+        event_log("CFR", "Web settings change denied - %s lacks the required role",
+                  ss->cfr_idx >= 0 ? g_cfg.users[ss->cfr_idx].name : "user");
+        http_403(s, "{\"ok\":false,\"need\":\"role\"}");
+        return;
+    }
 
     int n = 0;
     for (const char *p = body; p && *p; ) {
@@ -921,8 +982,67 @@ static void api_config_post(wsock_t s, const char *req)
         p = amp ? amp + 1 : NULL;
     }
     config_save();
-    event_log("CONFIG", "Web: %d setting%s updated (%s)",
-              n, n == 1 ? "" : "s", g_cfg.web_user);
+    ss->set_exp = now + SET_TTL;   /* slide the unlock window on activity */
+    event_log("CONFIG", "Web: %d setting%s updated by %s", n, n == 1 ? "" : "s",
+              (g_cfg.cfr_enable && ss->cfr_idx >= 0) ? g_cfg.users[ss->cfr_idx].name
+                                                     : "service login");
+    http_send(s, "200 OK", "application/json", "{\"ok\":true}", 11);
+}
+
+/* POST /api/settings/unlock - service password (normal) or 21 CFR login */
+static void api_unlock(wsock_t s, const char *req)
+{
+    sess_t *ss = sess_find(req);
+    if (!ss) { http_401(s); return; }
+    const char *body = strstr(req, "\r\n\r\n");
+    body = body ? body + 4 : "";
+    time_t now = time(NULL);
+
+    if (g_cfg.cfr_enable) {
+        char uidx[8] = "", pin[16] = "";
+        form_field(body, "user", uidx, sizeof(uidx));
+        form_field(body, "pin", pin, sizeof(pin));
+        int idx = atoi(uidx);
+        if (idx >= 0 && idx < 8 && g_cfg.users[idx].active &&
+            g_cfg.users[idx].pin[0] && ct_eq(pin, g_cfg.users[idx].pin)) {
+            if (idx != 0 && g_cfg.pin_expiry_days > 0 && g_cfg.users[idx].pin_set > 0 &&
+                (int)(now / 86400) - g_cfg.users[idx].pin_set > g_cfg.pin_expiry_days) {
+                event_log("CFR", "Web settings: PIN expired for %s", g_cfg.users[idx].name);
+                http_403(s, "{\"ok\":false,\"err\":\"PIN expired - change it on the device\"}");
+                return;
+            }
+            ss->set_exp  = now + SET_TTL;
+            ss->cfr_idx  = idx;
+            ss->cfr_role = g_cfg.users[idx].role;
+            event_log("CFR", "Web settings unlocked by %s", g_cfg.users[idx].name);
+            char bb[128];
+            snprintf(bb, sizeof(bb), "{\"ok\":true,\"role\":%d,\"name\":\"%s\"}",
+                     g_cfg.users[idx].role, g_cfg.users[idx].name);
+            http_send(s, "200 OK", "application/json", bb, strlen(bb));
+            return;
+        }
+        event_log("CFR", "Web settings: failed login attempt");
+        http_send(s, "401 Unauthorized", "application/json", "{\"ok\":false}", 12);
+    } else {
+        char pass[24] = "";
+        form_field(body, "pass", pass, sizeof(pass));
+        if (pass[0] && ct_eq(pass, g_cfg.factory_pin)) {
+            ss->set_exp  = now + SET_TTL;
+            ss->cfr_idx  = -1;
+            ss->cfr_role = ROLE_SUPERADMIN;
+            event_log("CONFIG", "Web settings unlocked (service password)");
+            http_send(s, "200 OK", "application/json", "{\"ok\":true}", 11);
+            return;
+        }
+        event_log("CONFIG", "Web settings: wrong service password");
+        http_send(s, "401 Unauthorized", "application/json", "{\"ok\":false}", 12);
+    }
+}
+
+static void api_lock(wsock_t s, const char *req)
+{
+    sess_t *ss = sess_find(req);
+    if (ss) ss->set_exp = 0;
     http_send(s, "200 OK", "application/json", "{\"ok\":true}", 11);
 }
 
@@ -1127,9 +1247,13 @@ static void handle_client(wsock_t c)
 
     if (!strcmp(path, "/api/logout"))
         api_logout(c, req);
+    else if (!strcmp(path, "/api/settings/unlock"))
+        api_unlock(c, req);
+    else if (!strcmp(path, "/api/settings/lock"))
+        api_lock(c, req);
     else if (!strcmp(path, "/api/config")) {
         if (!strcmp(method, "POST")) api_config_post(c, req);
-        else                          api_config_get(c);
+        else                          api_config_get(c, req);
     }
     else if (!strcmp(path, "/") || !strcmp(path, "/index.html") ||
              !strcmp(path, "/login"))
