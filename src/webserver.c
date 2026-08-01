@@ -838,9 +838,10 @@ static void api_config_get(wsock_t s, const char *req)
             if (viewer >= ROLE_ADMIN &&
                 (viewer >= ROLE_SUPERADMIN || g_cfg.users[i].role < ROLE_SUPERADMIN))
                 jesc(pn, sizeof(pn), g_cfg.users[i].pin);
-            AP("%s{\"name\":\"%s\",\"role\":%d,\"active\":%d,\"pinset\":%d,\"pin\":\"%s\"}",
-               i ? "," : "", nm, g_cfg.users[i].role,
-               g_cfg.users[i].active, g_cfg.users[i].pin_set, pn);
+            AP("%s{\"name\":\"%s\",\"role\":%d,\"active\":%d,\"pinset\":%d,"
+               "\"pin\":\"%s\",\"expiry\":%d}",
+               i ? "," : "", nm, g_cfg.users[i].role, g_cfg.users[i].active,
+               g_cfg.users[i].pin_set, pn, g_cfg.users[i].pin_expiry);
         }
     AP("],\"ch\":[");
     data_lock();
@@ -910,6 +911,7 @@ static void cfg_set(const char *k, const char *v)
         if (!strcmp(f, "name"))        SETSTR(u->name, v);
         else if (!strcmp(f, "role"))   u->role   = clampi(atoi(v), 0, 3);
         else if (!strcmp(f, "active")) u->active = atoi(v) ? 1 : 0;
+        else if (!strcmp(f, "expiry")) u->pin_expiry = clampi(atoi(v), 0, 3650);
         else if (!strcmp(f, "pin")) { if (*v) { SETSTR(u->pin, v); u->pin_set = (int)(time(NULL) / 86400); } }
     }
     /* channels: ch<0-39>_<field> */
@@ -1016,8 +1018,10 @@ static void api_unlock(wsock_t s, const char *req)
         int idx = atoi(uidx);
         if (idx >= 0 && idx < 8 && g_cfg.users[idx].active &&
             g_cfg.users[idx].pin[0] && ct_eq(pin, g_cfg.users[idx].pin)) {
-            if (idx != 0 && g_cfg.pin_expiry_days > 0 && g_cfg.users[idx].pin_set > 0 &&
-                (int)(now / 86400) - g_cfg.users[idx].pin_set > g_cfg.pin_expiry_days) {
+            int eff = g_cfg.users[idx].pin_expiry > 0 ? g_cfg.users[idx].pin_expiry
+                                                      : g_cfg.pin_expiry_days;
+            if (idx != 0 && eff > 0 && g_cfg.users[idx].pin_set > 0 &&
+                (int)(now / 86400) - g_cfg.users[idx].pin_set > eff) {
                 event_log("CFR", "Web settings: PIN expired for %s", g_cfg.users[idx].name);
                 http_403(s, "{\"ok\":false,\"err\":\"PIN expired - change it on the device\"}");
                 return;

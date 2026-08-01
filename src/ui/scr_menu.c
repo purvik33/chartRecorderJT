@@ -1218,8 +1218,9 @@ static void build_diag_form(void)
 /* ---- Account manager (user accounts; main menu while CFR is on) -------- */
 
 static lv_obj_t *dd_accsel, *ta_accname, *ta_accpin,
-                *dd_accrole, *dd_accact, *lbl_accinfo;
+                *dd_accrole, *dd_accact, *dd_accexp, *lbl_accinfo;
 static int acc_sel;
+static const int acc_exp_vals[] = { 0, 30, 60, 90, 180, 365 };
 
 static void acc_dd_refresh(void)
 {
@@ -1244,6 +1245,12 @@ static void acc_load(void)
                              (uint32_t)(u->role >= 0 && u->role <= 3
                                         ? u->role : 0));
     lv_dropdown_set_selected(dd_accact, u->active ? 0 : 1);
+    {
+        int ei = 0;
+        for (int k = 0; k < 6; k++)
+            if (acc_exp_vals[k] == u->pin_expiry) { ei = k; break; }
+        lv_dropdown_set_selected(dd_accexp, (uint32_t)ei);
+    }
 
     /* slot 1 is the permanent administrator - can't be demoted or
      * disabled, so a lockout is impossible */
@@ -1285,6 +1292,7 @@ static void acc_save_cb(lv_event_t *e)
     if (pin_changed) u->pin_set = (int)(time(NULL) / 86400);  /* reset aging */
     u->role   = (int)lv_dropdown_get_selected(dd_accrole);
     u->active = lv_dropdown_get_selected(dd_accact) == 0 ? 1 : 0;
+    u->pin_expiry = acc_exp_vals[lv_dropdown_get_selected(dd_accexp)];
     if (acc_sel == 0) { u->role = ROLE_SUPERADMIN; u->active = 1; }
     if (!u->name[0] || !u->pin[0]) u->active = 0;
 
@@ -1309,6 +1317,9 @@ static void build_accounts_form(void)
     dd_accrole = form_dd(form_row("Access level"),
                          "Operator\nSupervisor\nAdmin\nSuper admin", 0);
     dd_accact  = form_dd(form_row("Status"), "Active\nDisabled", 1);
+    dd_accexp  = form_dd(form_row("PIN expiry"),
+                         "Global default\n30 days\n60 days\n90 days\n"
+                         "180 days\n365 days", 0);
 
     page_save_button(LV_SYMBOL_SAVE "  Save", acc_save_cb);
 

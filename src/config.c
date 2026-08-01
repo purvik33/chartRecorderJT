@@ -155,6 +155,7 @@ void config_load(void)
                 else if (!strcmp(key + 3, "role"))    u->role = atoi(val);
                 else if (!strcmp(key + 3, "active"))  u->active = atoi(val);
                 else if (!strcmp(key + 3, "pin_set")) u->pin_set = atoi(val);
+                else if (!strcmp(key + 3, "expiry"))  u->pin_expiry = atoi(val);
             }
             else if (!strncmp(key, "ch_color", 8)) {
                 int i = atoi(key + 8);
@@ -265,9 +266,9 @@ void config_save(void)
         cfr_user_t *u = &g_cfg.users[i];
         if (!u->name[0]) continue;
         fprintf(f, "u%d_name=%s\nu%d_pin=%s\nu%d_role=%d\nu%d_active=%d\n"
-                   "u%d_pin_set=%d\n",
+                   "u%d_pin_set=%d\nu%d_expiry=%d\n",
                 i + 1, u->name, i + 1, u->pin, i + 1, u->role,
-                i + 1, u->active, i + 1, u->pin_set);
+                i + 1, u->active, i + 1, u->pin_set, i + 1, u->pin_expiry);
     }
     fprintf(f, "\n[system]\n");
     fprintf(f, "brand=%s\n", g_cfg.brand);

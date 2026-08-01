@@ -69,11 +69,13 @@ int cfr_login(int idx, const char *pin)
     fail_count[idx] = 0; lock_until[idx] = 0;
 
     /* §11.300 PIN aging: a correct but expired PIN is rejected (the
-     * super admin may still enter, so a site can never lock itself out) */
-    if (g_cfg.cfr_enable && g_cfg.pin_expiry_days > 0 && u->pin_set > 0 &&
-        (now / 86400 - u->pin_set) > g_cfg.pin_expiry_days) {
+     * super admin may still enter, so a site can never lock itself out).
+     * A per-user expiry overrides the global default when set. */
+    int eff_exp = u->pin_expiry > 0 ? u->pin_expiry : g_cfg.pin_expiry_days;
+    if (g_cfg.cfr_enable && eff_exp > 0 && u->pin_set > 0 &&
+        (now / 86400 - u->pin_set) > eff_exp) {
         event_log("SYSTEM", "PIN expired for user %s (%d-day policy)",
-                  u->name, g_cfg.pin_expiry_days);
+                  u->name, eff_exp);
         if (idx != 0) return -2;
     }
 

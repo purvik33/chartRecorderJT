@@ -8,9 +8,10 @@ typedef enum { SRC_SIM = 0, SRC_MODBUS = 1 } data_src_t;
 typedef struct {
     char name[17];
     char pin[12];
-    int  role;      /* 0 operator, 1 supervisor, 2 administrator */
+    int  role;         /* 0 operator, 1 supervisor, 2 administrator */
     int  active;
-    int  pin_set;   /* day-number (epoch/86400) the PIN was last set; 0=unknown */
+    int  pin_set;      /* day-number (epoch/86400) the PIN was last set; 0=unknown */
+    int  pin_expiry;   /* per-user PIN aging in days; 0 = use global default */
 } cfr_user_t;
 
 /* register value encoding on the card */

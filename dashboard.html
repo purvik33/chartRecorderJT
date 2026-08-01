@@ -220,22 +220,35 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 .note{background:rgba(232,161,60,.1);border:1px solid rgba(232,161,60,.35);
   color:var(--warn);border-radius:10px;padding:13px 16px;font-size:13.5px}
 /* config editor */
-.cfg-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 16px}
-.cfg-tab{background:var(--card);border:1px solid var(--line);color:var(--mut);
-  border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}
+.cfg-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 18px}
+.cfg-tab{background:transparent;border:1px solid var(--line);color:var(--mut);
+  border-radius:999px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;
+  transition:color .15s,border-color .15s,background .15s}
+.cfg-tab:hover{color:var(--ink);border-color:var(--acc)}
 .cfg-tab.on{background:var(--acc);border-color:var(--acc);color:#07131f}
-.cfg-body{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
-.cfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
-.cfg-f{display:flex;flex-direction:column;gap:5px}
-.cfg-f label{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
-.cfg-f input,.cfg-f select{background:var(--bg);border:1px solid var(--line);border-radius:8px;
-  color:var(--ink);font-size:14px;padding:9px 11px;font-family:inherit;outline:none}
-.cfg-f input:focus,.cfg-f select:focus{border-color:var(--acc)}
-.cfg-chrow{max-width:340px;margin-bottom:16px}
-.cfg-actions{display:flex;align-items:center;gap:14px;margin-top:18px}
-.cfg-save{background:var(--acc);color:#07131f;border:none;border-radius:8px;padding:10px 22px;
-  font-weight:700;font-size:14px;cursor:pointer}
+.cfg-body{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;
+  box-shadow:0 10px 30px -22px rgba(0,0,0,.5)}
+.cfg-head{display:flex;gap:14px;align-items:flex-start;padding-bottom:16px;margin-bottom:20px;
+  border-bottom:1px solid var(--line)}
+.cfg-hic{flex:0 0 42px;width:42px;height:42px;border-radius:11px;display:grid;place-items:center;
+  background:rgba(79,195,247,.12);color:var(--acc)}
+.cfg-hic svg{width:22px;height:22px}
+.cfg-ht{font-size:18px;font-weight:700;letter-spacing:-.01em}
+.cfg-hd{color:var(--mut);font-size:13px;margin-top:2px;max-width:64ch;line-height:1.5}
+.cfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px 18px}
+.cfg-f{display:flex;flex-direction:column;gap:6px}
+.cfg-f label{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+.cfg-f input,.cfg-f select{background:var(--bg);border:1px solid var(--line);border-radius:9px;
+  color:var(--ink);font-size:14px;padding:0 12px;height:42px;font-family:inherit;outline:none;
+  transition:border-color .15s,box-shadow .15s}
+.cfg-f input:focus,.cfg-f select:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,195,247,.16)}
+.cfg-chrow{max-width:360px;margin-bottom:18px}
+.cfg-actions{display:flex;align-items:center;gap:16px;margin-top:22px;padding-top:18px;
+  border-top:1px solid var(--line)}
+.cfg-save{background:var(--acc);color:#07131f;border:none;border-radius:9px;padding:11px 26px;
+  font-weight:700;font-size:14px;cursor:pointer;transition:filter .15s}
 .cfg-save:hover{filter:brightness(1.08)}
+.cfg-tblwrap{overflow-x:auto;margin:0 -4px}
 .cfg-msg{font-size:13px}.cfg-msg.ok{color:var(--ok)}.cfg-msg.err{color:var(--alm)}
 .cfg-warn{background:rgba(232,161,60,.1);border:1px solid rgba(232,161,60,.35);color:var(--warn);
   border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:16px}
@@ -1002,6 +1015,22 @@ function fillSettings(){
 /* ---- editable configuration (reads/writes /api/config) ---- */
 let CFG=null, cfgGroup="channels", cfgChan=0, cfgInited=false;
 const EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const GMETA={
+  channels:{t:"Channels & alarms",d:"Tag, engineering unit, range and Hi/Lo alarm setpoints for each measurement channel.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'},
+  logging:{t:"Logging",d:"How often samples are written to storage, and how long recorded history is kept.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>'},
+  network:{t:"Network",d:"Ethernet, Wi-Fi and the Modbus TCP server. Network changes take effect after a restart.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>'},
+  source:{t:"Data source",d:"Demo data or live input cards, with card count and link parameters. Applies after a restart.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>'},
+  cfr:{t:"21 CFR Part 11",d:"Compliance mode, electronic signatures on reports and the default PIN-aging policy.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V5z"/><path d="M9 12l2 2 4-4"/></svg>'},
+  users:{t:"User accounts",d:"Recorder accounts, roles, PINs and per-user PIN expiry. Super Admin & Admin only.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M21 20c0-2.4-1.3-4.5-3.3-5.4"/></svg>'}
+};
+function cfgHead(g){const m=GMETA[g];if(!m)return"";
+  return `<div class="cfg-head"><div class="cfg-hic">${m.ic}</div><div><div class="cfg-ht">${m.t}</div><div class="cfg-hd">${cesc(m.d)}</div></div></div>`;}
 function cesc(s){return String(s==null?"":s).replace(/[&<>"]/g,
   c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function fF(label,id,val,type){
@@ -1074,9 +1103,10 @@ function renderCfg(){
       fF("PIN expiry (days, 0 = never)","f_expiry",CFG.cfr.expiry,"number")+
       `</div>`+cfgActions();
   }else if(cfgGroup=="users"){
-    h=`<div class="cfg-warn">User 1 is the built-in super admin (role and active state are locked). Leave a PIN blank to keep it unchanged.</div>`+
-      `<table class="cfg-utbl"><tr><th>#</th><th>Name</th><th>Role</th><th>Active</th><th>New PIN</th></tr>`;
+    h=`<div class="cfg-warn">User 1 is the built-in super admin (role and active state are locked). Leave a PIN blank to keep it unchanged. "Default" expiry uses the global 21 CFR PIN-aging setting.</div>`+
+      `<div class="cfg-tblwrap"><table class="cfg-utbl"><tr><th>#</th><th>Name</th><th>Role</th><th>Active</th><th>New PIN</th><th>PIN expiry</th></tr>`;
     const ROLES=[[0,"Operator"],[1,"Supervisor"],[2,"Admin"],[3,"Super admin"]];
+    const EXP=[[0,"Default"],[30,"30 days"],[60,"60 days"],[90,"90 days"],[180,"180 days"],[365,"365 days"]];
     CFG.users.forEach((u,i)=>{
       const pinHidden=(CFG.sess.cfr&&CFG.sess.role<3&&u.role>=3); // Admin can't see Super-admin's PIN
       h+=`<tr><td>${i+1}</td>`+
@@ -1085,11 +1115,12 @@ function renderCfg(){
         `<td><select id="u${i}_active"${i==0?" disabled":""}>`+[[1,"Yes"],[0,"No"]].map(o=>`<option value="${o[0]}"${o[0]==u.active?" selected":""}>${o[1]}</option>`).join("")+`</select></td>`+
         `<td><div class="pincell"><input id="u${i}_pin" type="password" value="${cesc(u.pin||"")}" `+
           `placeholder="${pinHidden?"not visible":(u.pinset?"":"set PIN")}"${pinHidden?" disabled":""}>`+
-          `<button type="button" class="eye" data-t="u${i}_pin"${pinHidden?" disabled":""} title="Show / hide">${EYE}</button></div></td></tr>`;
+          `<button type="button" class="eye" data-t="u${i}_pin"${pinHidden?" disabled":""} title="Show / hide">${EYE}</button></div></td>`+
+        `<td><select id="u${i}_exp"${i==0?" disabled":""}>`+EXP.map(o=>`<option value="${o[0]}"${o[0]==(u.expiry||0)?" selected":""}>${o[1]}</option>`).join("")+`</select></td></tr>`;
     });
-    h+=`</table>`+cfgActions();
+    h+=`</table></div>`+cfgActions();
   }
-  B.innerHTML=cfgWho()+h;
+  B.innerHTML=cfgWho()+cfgHead(cfgGroup)+h;
   const lb=$("cfg-lockbtn");if(lb)lb.onclick=doLock;
   const chsel=$("cfg-ch");if(chsel)chsel.onchange=()=>{cfgChan=+chsel.value;renderCfg();};
   const sb=$("cfg-savebtn");if(sb)sb.onclick=saveCfg;
@@ -1159,7 +1190,7 @@ async function saveCfg(){
   else if(cfgGroup=="source"){add("source",$("f_src").value);add("cards",$("f_cards").value);add("baud",$("f_baud").value);add("port",$("f_port").value);add("slave_base",$("f_slave").value);}
   else if(cfgGroup=="network"){add("net_dhcp",$("f_ndhcp").value);add("net_ip",$("f_nip").value);add("net_mask",$("f_nmask").value);add("net_gw",$("f_ngw").value);add("net_dns",$("f_ndns").value);add("wifi_enable",$("f_wen").value);add("wifi_ssid",$("f_wssid").value);if($("f_wpass").value)add("wifi_pass",$("f_wpass").value);add("tcp_enable",$("f_tcp").value);add("tcp_port",$("f_tcpport").value);}
   else if(cfgGroup=="cfr"){add("cfr_enable",$("f_cfr").value);add("esign_enable",$("f_esign").value);add("pin_expiry_days",$("f_expiry").value);}
-  else if(cfgGroup=="users"){CFG.users.forEach((u,i)=>{add("user"+i+"_name",$("u"+i+"_name").value);if(i>0){add("user"+i+"_role",$("u"+i+"_role").value);add("user"+i+"_active",$("u"+i+"_active").value);}const pv=$("u"+i+"_pin").value;if(pv&&pv!==(u.pin||""))add("user"+i+"_pin",pv);});}
+  else if(cfgGroup=="users"){CFG.users.forEach((u,i)=>{add("user"+i+"_name",$("u"+i+"_name").value);if(i>0){add("user"+i+"_role",$("u"+i+"_role").value);add("user"+i+"_active",$("u"+i+"_active").value);add("user"+i+"_expiry",$("u"+i+"_exp").value);}const pv=$("u"+i+"_pin").value;if(pv&&pv!==(u.pin||""))add("user"+i+"_pin",pv);});}
   try{const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:P.join("&")});
     if(r.ok){msg.className="cfg-msg ok";msg.textContent="Saved ✓";setTimeout(()=>loadCfg(true),500);return;}
     const j=await r.json().catch(()=>({}));
