@@ -447,7 +447,7 @@ static const char *http_header(const char *req, const char *name)
 
 /* ---- sessions: a small fixed table of random tokens -------------------- */
 #define SESS_MAX 8
-#define SESS_TTL 3600            /* seconds; refreshed on each request */
+#define SESS_TTL (30*24*3600)    /* 30 days; refreshed (slid) on each request */
 typedef struct { char tok[33]; time_t exp; } sess_t;
 static sess_t sessions[SESS_MAX];
 
