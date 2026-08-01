@@ -56,6 +56,33 @@ static void recorder_stop_log(void)
     event_log("SYSTEM", "Recorder stopped");
 }
 
+/* Minimal, dependency-free sd_notify(3): lets systemd's software watchdog
+ * (WatchdogSec=) detect a hung UI thread and restart us - no libsystemd. */
+#ifndef _WIN32
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <stddef.h>
+static void sd_notify_raw(const char *state)
+{
+    const char *path = getenv("NOTIFY_SOCKET");
+    if (!path || !*path) return;                 /* not run under systemd */
+    int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (fd < 0) return;
+    struct sockaddr_un a;
+    memset(&a, 0, sizeof(a));
+    a.sun_family = AF_UNIX;
+    size_t pl = strlen(path);
+    if (pl >= sizeof(a.sun_path)) { close(fd); return; }
+    memcpy(a.sun_path, path, pl + 1);
+    if (a.sun_path[0] == '@') a.sun_path[0] = '\0';   /* abstract namespace */
+    socklen_t len = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + pl);
+    (void)sendto(fd, state, strlen(state), 0, (struct sockaddr *)&a, len);
+    close(fd);
+}
+#else
+static void sd_notify_raw(const char *state) { (void)state; }
+#endif
+
 int main(int argc, char **argv)
 {
     chdir_to_exe();
@@ -100,11 +127,19 @@ int main(int argc, char **argv)
     event_log("SYSTEM", "Logging started; interval %d s",
               g_cfg.store_interval);
 
+    sd_notify_raw("READY=1");          /* tell systemd we are up */
+    time_t last_wd = 0;
+
     while (1) {
         uint32_t wait = lv_timer_handler();
         if (wait > 30) wait = 30;
         if (wait < 1)  wait = 1;
         sleep_ms(wait);
+
+        /* watchdog heartbeat from the UI loop: if lv_timer_handler ever
+         * hangs, these stop and systemd restarts us (WatchdogSec) */
+        time_t nowt = time(NULL);
+        if (nowt - last_wd >= 10) { last_wd = nowt; sd_notify_raw("WATCHDOG=1"); }
     }
     return 0;
 }
