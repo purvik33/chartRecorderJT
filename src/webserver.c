@@ -416,40 +416,13 @@ static void http_404(wsock_t s)
     http_send(s, "404 Not Found", "text/plain", "not found", 9);
 }
 
-/* ---- authentication (HTTP Basic) --------------------------------------- */
+/* ---- authentication (form login + session cookie) ---------------------- */
 #ifdef _WIN32
 #define STRNCASECMP _strnicmp
 #else
 #include <strings.h>
 #define STRNCASECMP strncasecmp
 #endif
-
-static int b64val(char c)
-{
-    if (c >= 'A' && c <= 'Z') return c - 'A';
-    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-    if (c >= '0' && c <= '9') return c - '0' + 52;
-    if (c == '+') return 62;
-    if (c == '/') return 63;
-    return -1;
-}
-
-static void b64decode(const char *in, char *out, int outmax)
-{
-    int o = 0, bits = 0, acc = 0;
-    for (; *in && *in != '\r' && *in != '\n' && *in != ' '; in++) {
-        if (*in == '=') break;
-        int v = b64val(*in);
-        if (v < 0) continue;
-        acc = (acc << 6) | v;
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            if (o < outmax - 1) out[o++] = (char)((acc >> bits) & 0xFF);
-        }
-    }
-    out[o] = 0;
-}
 
 /* constant-time compare - no early-out timing leak on the password */
 static int ct_eq(const char *a, const char *b)
@@ -472,35 +445,175 @@ static const char *http_header(const char *req, const char *name)
     return NULL;
 }
 
-static int web_authorized(const char *req)
+/* ---- sessions: a small fixed table of random tokens -------------------- */
+#define SESS_MAX 8
+#define SESS_TTL 3600            /* seconds; refreshed on each request */
+typedef struct { char tok[33]; time_t exp; } sess_t;
+static sess_t sessions[SESS_MAX];
+
+static void gen_token(char out[33])
 {
-    if (!g_cfg.web_auth) return 1;                 /* auth disabled */
+    unsigned char b[16];
+    int got = 0;
+#ifndef _WIN32
+    FILE *f = fopen("/dev/urandom", "rb");
+    if (f) { got = (fread(b, 1, sizeof(b), f) == sizeof(b)); fclose(f); }
+#endif
+    if (!got) for (int i = 0; i < 16; i++) b[i] = (unsigned char)(rand() & 0xFF);
+    static const char hx[] = "0123456789abcdef";
+    for (int i = 0; i < 16; i++) { out[i*2] = hx[b[i] >> 4]; out[i*2+1] = hx[b[i] & 15]; }
+    out[32] = 0;
+}
 
-    const char *a = http_header(req, "authorization:");
-    if (!a) return 0;
-    while (*a == ' ') a++;
-    if (STRNCASECMP(a, "basic ", 6) != 0) return 0;
-    a += 6;
-    while (*a == ' ') a++;
+static void sess_create(char out[33])
+{
+    gen_token(out);
+    time_t now = time(NULL);
+    int slot = -1;
+    for (int i = 0; i < SESS_MAX; i++)
+        if (sessions[i].tok[0] == 0 || sessions[i].exp < now) { slot = i; break; }
+    if (slot < 0) {              /* all busy: evict the soonest-expiring */
+        slot = 0;
+        for (int i = 1; i < SESS_MAX; i++)
+            if (sessions[i].exp < sessions[slot].exp) slot = i;
+    }
+    memcpy(sessions[slot].tok, out, 33);
+    sessions[slot].exp = now + SESS_TTL;
+}
 
-    char dec[128], want[80];
-    b64decode(a, dec, sizeof(dec));
-    snprintf(want, sizeof(want), "%s:%s", g_cfg.web_user, g_cfg.web_pass);
-    return ct_eq(dec, want);
+/* pull the 'sid' cookie (32 hex chars) out of a Cookie header value */
+static void cookie_sid(const char *ck, char out[33])
+{
+    out[0] = 0;
+    for (const char *p = strstr(ck, "sid="); p; p = strstr(p + 4, "sid=")) {
+        if (p == ck || p[-1] == ' ' || p[-1] == ';') {
+            p += 4;
+            int i = 0;
+            while (i < 32 && ((p[i] >= '0' && p[i] <= '9') ||
+                              (p[i] >= 'a' && p[i] <= 'f'))) { out[i] = p[i]; i++; }
+            out[i] = 0;
+            return;
+        }
+    }
+}
+
+static int sess_valid(const char *req)
+{
+    const char *ck = http_header(req, "cookie:");
+    if (!ck) return 0;
+    char tok[33];
+    cookie_sid(ck, tok);
+    if (!tok[0]) return 0;
+    time_t now = time(NULL);
+    for (int i = 0; i < SESS_MAX; i++)
+        if (sessions[i].tok[0] && sessions[i].exp >= now &&
+            ct_eq(sessions[i].tok, tok)) {
+            sessions[i].exp = now + SESS_TTL;        /* sliding expiry */
+            return 1;
+        }
+    return 0;
+}
+
+static void sess_drop(const char *req)
+{
+    const char *ck = http_header(req, "cookie:");
+    if (!ck) return;
+    char tok[33];
+    cookie_sid(ck, tok);
+    if (!tok[0]) return;
+    for (int i = 0; i < SESS_MAX; i++)
+        if (sessions[i].tok[0] && ct_eq(sessions[i].tok, tok)) {
+            sessions[i].tok[0] = 0; sessions[i].exp = 0;
+        }
+}
+
+/* ---- form-body helpers ------------------------------------------------- */
+static int hexv(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static void url_decode(char *d, const char *s, int n)
+{
+    int o = 0;
+    for (; *s && o < n - 1; s++) {
+        if (*s == '%' && hexv(s[1]) >= 0 && hexv(s[2]) >= 0) {
+            d[o++] = (char)(hexv(s[1]) * 16 + hexv(s[2])); s += 2;
+        } else if (*s == '+') d[o++] = ' ';
+        else d[o++] = *s;
+    }
+    d[o] = 0;
+}
+
+static int form_field(const char *body, const char *key, char *out, int outn)
+{
+    size_t kl = strlen(key);
+    out[0] = 0;
+    for (const char *p = body; p && *p; ) {
+        const char *amp = strchr(p, '&');
+        const char *eq  = strchr(p, '=');
+        if (eq && (!amp || eq < amp) && (size_t)(eq - p) == kl &&
+            strncmp(p, key, kl) == 0) {
+            const char *vs = eq + 1, *ve = amp ? amp : vs + strlen(vs);
+            char raw[96];
+            int rl = (int)(ve - vs);
+            if (rl > (int)sizeof(raw) - 1) rl = (int)sizeof(raw) - 1;
+            memcpy(raw, vs, (size_t)rl); raw[rl] = 0;
+            url_decode(out, raw, outn);
+            return 1;
+        }
+        p = amp ? amp + 1 : NULL;
+    }
+    return 0;
+}
+
+static void api_login(wsock_t s, const char *req)
+{
+    const char *body = strstr(req, "\r\n\r\n");
+    char u[64] = "", p[64] = "";
+    if (body) {
+        body += 4;
+        form_field(body, "user", u, sizeof(u));
+        form_field(body, "pass", p, sizeof(p));
+    }
+    if (ct_eq(u, g_cfg.web_user) && ct_eq(p, g_cfg.web_pass)) {
+        char tok[33];
+        sess_create(tok);
+        static const char ok[] = "{\"ok\":true}";
+        char hdr[320];
+        int hl = snprintf(hdr, sizeof(hdr),
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+            "Set-Cookie: sid=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d\r\n"
+            "Content-Length: %u\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+            tok, SESS_TTL, (unsigned)(sizeof(ok) - 1));
+        if (send_all(s, hdr, (size_t)hl) == 0)
+            send_all(s, ok, sizeof(ok) - 1);
+    } else {
+        http_send(s, "401 Unauthorized", "application/json",
+                  "{\"ok\":false}", 12);
+    }
+}
+
+static void api_logout(wsock_t s, const char *req)
+{
+    sess_drop(req);
+    static const char b[] = "{\"ok\":true}";
+    char hdr[256];
+    int hl = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+        "Set-Cookie: sid=; Path=/; Max-Age=0\r\n"
+        "Content-Length: %u\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        (unsigned)(sizeof(b) - 1));
+    if (send_all(s, hdr, (size_t)hl) == 0)
+        send_all(s, b, sizeof(b) - 1);
 }
 
 static void http_401(wsock_t s)
 {
-    static const char body[] = "Authentication required";
-    char hdr[256];
-    int hl = snprintf(hdr, sizeof(hdr),
-                      "HTTP/1.1 401 Unauthorized\r\n"
-                      "WWW-Authenticate: Basic realm=\"PR-40 Recorder\"\r\n"
-                      "Content-Type: text/plain\r\nContent-Length: %u\r\n"
-                      "Cache-Control: no-store\r\nConnection: close\r\n\r\n",
-                      (unsigned)(sizeof(body) - 1));
-    if (send_all(s, hdr, (size_t)hl) == 0)
-        send_all(s, body, sizeof(body) - 1);
+    http_send(s, "401 Unauthorized", "application/json", "{\"auth\":0}", 10);
 }
 
 /* stream a log file with a download-friendly header */
@@ -656,6 +769,129 @@ static void api_log(wsock_t s, const char *name)
 
 /* ---- server thread ----------------------------------------------------- */
 
+/* ---- split-screen login page ------------------------------------------- */
+static const char LOGIN_HTML[] =
+"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+"<meta name='viewport' content='width=device-width,initial-scale=1'>"
+"<title>JETPACE PR-40 . Sign in</title><style>"
+":root{--bg:#0d1b2a;--card:#152638;--line:#24405c;--ink:#e8eef4;"
+"--mut:#8fa3b8;--acc:#4fc3f7;--alm:#ff6b6b}"
+"*{box-sizing:border-box;margin:0}html,body{height:100%}"
+"body{background:var(--bg);color:var(--ink);"
+"font-family:system-ui,Segoe UI,sans-serif}"
+".split{display:flex;min-height:100vh}"
+".brand{flex:1.15;position:relative;overflow:hidden;display:flex;"
+"flex-direction:column;justify-content:center;gap:20px;padding:6vh 5vw;"
+"background:linear-gradient(140deg,#0a1622 0%,#123047 55%,#0e3d52 100%)}"
+".brand:before{content:'';position:absolute;inset:0;"
+"background:radial-gradient(620px 420px at 72% 18%,rgba(79,195,247,.18),"
+"transparent 60%)}"
+".blogo{font-size:42px;font-weight:800;letter-spacing:3px;z-index:1}"
+".blogo span{color:var(--acc)}"
+".bsub{font-size:19px;color:#cfe3f2;font-weight:500;letter-spacing:.5px;z-index:1}"
+".btag{font-size:14px;color:var(--mut);max-width:430px;line-height:1.6;z-index:1}"
+".chart{position:relative;z-index:1;width:100%;max-width:470px;height:160px;"
+"margin-top:8px}"
+".chart svg{width:100%;height:100%;overflow:visible}"
+".grid{stroke:rgba(143,163,184,.13);stroke-width:1}"
+".trace{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;"
+"stroke-dasharray:640;animation:draw 5s ease-in-out infinite}"
+".t1{stroke:#5DCAA5}.t2{stroke:#85B7EB;animation-delay:.5s}"
+".t3{stroke:#F0997B;animation-delay:1s}"
+"@keyframes draw{0%{stroke-dashoffset:640}45%{stroke-dashoffset:0}"
+"55%{stroke-dashoffset:0}100%{stroke-dashoffset:640}}"
+".sweep{position:absolute;top:0;bottom:0;width:2px;left:0;"
+"background:linear-gradient(transparent,rgba(79,195,247,.7),transparent);"
+"animation:sweep 5s linear infinite}"
+"@keyframes sweep{0%{left:0;opacity:0}8%{opacity:1}92%{opacity:1}"
+"100%{left:100%;opacity:0}}"
+".dots{display:flex;align-items:center;gap:8px;z-index:1;color:var(--mut);"
+"font-size:12px}.dots i{width:8px;height:8px;border-radius:50%;"
+"background:var(--acc);animation:blink 1.4s infinite}"
+".dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}"
+"@keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}"
+".login{flex:.85;display:flex;align-items:center;justify-content:center;"
+"padding:6vh 6vw}.box{width:100%;max-width:360px}"
+".box h2{font-size:27px;margin-bottom:6px}"
+".box .sub{color:var(--mut);font-size:14px;margin-bottom:26px}"
+"label{display:block;font-size:13px;color:var(--mut);margin:16px 0 6px}"
+"input{width:100%;padding:12px 14px;background:#0f2233;"
+"border:1px solid var(--line);border-radius:10px;color:var(--ink);"
+"font-size:15px;outline:none;transition:border-color .15s}"
+"input:focus{border-color:var(--acc)}"
+".btn{width:100%;margin-top:24px;padding:13px;border:none;border-radius:10px;"
+"background:var(--acc);color:#07131f;font-size:15px;font-weight:700;"
+"cursor:pointer;letter-spacing:.5px;transition:filter .15s}"
+".btn:hover{filter:brightness(1.08)}.btn:disabled{opacity:.6;cursor:default}"
+".err{display:none;margin-top:16px;padding:10px 14px;border-radius:8px;"
+"background:rgba(255,107,107,.14);border:1px solid var(--alm);"
+"color:#ffb0b0;font-size:13px}"
+".foot{margin-top:30px;color:var(--mut);font-size:12px;text-align:center}"
+"@media(max-width:820px){.brand{display:none}.login{flex:1}}"
+"</style></head><body><div class='split'>"
+"<div class='brand'>"
+"<div class='blogo'>JETPACE <span>PR-40</span></div>"
+"<div class='bsub'>Paperless Recorder</div>"
+"<div class='btag'>40-channel data acquisition &middot; trend, bar &amp; "
+"polar views &middot; 21 CFR Part 11 audit trail.</div>"
+"<div class='chart'><svg viewBox='0 0 470 160' preserveAspectRatio='none'>"
+"<line class='grid' x1='0' y1='40' x2='470' y2='40'/>"
+"<line class='grid' x1='0' y1='80' x2='470' y2='80'/>"
+"<line class='grid' x1='0' y1='120' x2='470' y2='120'/>"
+"<path class='trace t1' d='M0,122 C70,72 120,132 185,92 S305,42 365,96 "
+"S450,72 470,88'/>"
+"<path class='trace t2' d='M0,96 C60,122 135,60 195,102 S315,122 375,70 "
+"S455,102 470,80'/>"
+"<path class='trace t3' d='M0,70 C80,102 145,50 205,82 S305,60 365,112 "
+"S450,90 470,60'/></svg><div class='sweep'></div></div>"
+"<div class='dots'><i></i><i></i><i></i>"
+"<span style='margin-left:6px'>Live acquisition</span></div></div>"
+"<div class='login'><div class='box'>"
+"<h2>Sign in</h2><div class='sub'>Access the recorder dashboard</div>"
+"<form id='f'>"
+"<label>Username</label>"
+"<input id='u' autocomplete='username' value='admin'>"
+"<label>Password</label>"
+"<input id='p' type='password' autocomplete='current-password'>"
+"<div class='err' id='e'>Incorrect username or password</div>"
+"<button class='btn' id='b' type='submit'>Sign in</button></form>"
+"<div class='foot'>Secure access &middot; JETPACE Technologies</div>"
+"</div></div></div><script>\n"
+"const $=i=>document.getElementById(i);\n"
+"$('f').onsubmit=async ev=>{ev.preventDefault();const b=$('b');"
+"b.disabled=true;$('e').style.display='none';"
+"const body='user='+encodeURIComponent($('u').value)+"
+"'&pass='+encodeURIComponent($('p').value);"
+"try{const r=await fetch('/api/login',{method:'POST',"
+"headers:{'Content-Type':'application/x-www-form-urlencoded'},body});"
+"if(r.ok){location.href='/';}else{$('e').style.display='block';"
+"b.disabled=false;$('p').focus();}}"
+"catch(e){$('e').textContent='Connection error';"
+"$('e').style.display='block';b.disabled=false;}};\n"
+"$('p').focus();\n"
+"</script></body></html>";
+
+/* Serve login.html from disk if present, else the compiled login page. */
+static void serve_login(wsock_t s)
+{
+    FILE *f = fopen("login.html", "rb");
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char *buf = (sz > 0) ? (char *)malloc((size_t)sz) : NULL;
+        if (buf && fread(buf, 1, (size_t)sz, f) == (size_t)sz) {
+            http_send(s, "200 OK", "text/html", buf, (size_t)sz);
+            free(buf);
+            fclose(f);
+            return;
+        }
+        free(buf);
+        fclose(f);
+    }
+    http_send(s, "200 OK", "text/html", LOGIN_HTML, sizeof(LOGIN_HTML) - 1);
+}
+
 /* Serve dashboard.html from disk if present (edit-and-refresh, no rebuild),
  * otherwise the compiled-in fallback page. cwd is the exe dir (build/). */
 static void serve_dashboard(wsock_t s)
@@ -685,27 +921,42 @@ static void handle_client(wsock_t c)
     setsockopt(c, IPPROTO_TCP, TCP_NODELAY, (const char *)&yes,
                sizeof(yes));
 
-    char req[1024];
+    char req[2048];
     int n = (int)recv(c, req, sizeof(req) - 1, 0);
     if (n <= 0) { wsock_close(c); return; }
     req[n] = 0;
 
-    char path[128] = "";
-    if (sscanf(req, "GET %127s HTTP", path) != 1) {
-        http_send(c, "405 Method Not Allowed", "text/plain", "GET only",
-                  8);
+    char method[8] = "", path[128] = "";
+    if (sscanf(req, "%7s %127s", method, path) != 2) {
+        http_send(c, "400 Bad Request", "text/plain", "bad", 3);
         wsock_close(c);
         return;
     }
 
-    if (!web_authorized(req)) {          /* gate everything behind login */
-        http_401(c);
-        served++;
-        wsock_close(c);
+    /* the login endpoint is always reachable - it is how you get a session */
+    if (!strcmp(path, "/api/login")) {
+        api_login(c, req);
+        served++; wsock_close(c);
         return;
     }
 
-    if (!strcmp(path, "/") || !strcmp(path, "/index.html"))
+    int authed = !g_cfg.web_auth || sess_valid(req);
+    if (!authed) {
+        /* not logged in: show the login page for navigations, 401 for data
+         * (the dashboard's fetch sees 401 and bounces back to /login) */
+        if (!strcmp(path, "/") || !strcmp(path, "/index.html") ||
+            !strcmp(path, "/login"))
+            serve_login(c);
+        else
+            http_401(c);
+        served++; wsock_close(c);
+        return;
+    }
+
+    if (!strcmp(path, "/api/logout"))
+        api_logout(c, req);
+    else if (!strcmp(path, "/") || !strcmp(path, "/index.html") ||
+             !strcmp(path, "/login"))
         serve_dashboard(c);
     else if (!strcmp(path, "/api/live"))
         api_live(c);
