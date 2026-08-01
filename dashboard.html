@@ -466,16 +466,6 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
     <section class="screen" id="s-settings">
       <div class="scr-head"><h2>Settings</h2>
         <span class="sub">Display &amp; status</span></div>
-      <h2 class="hint">Display</h2>
-      <div class="ctl-row">
-        <label class="dl-lbl">Trend style
-          <select id="set-trendstyle">
-            <option value="line">Line (full width)</option>
-            <option value="values">Line + values (graph left, table right)</option>
-            <option value="vertical">Vertical (time top&rarr;bottom)</option>
-          </select>
-        </label>
-      </div>
       <h2 class="hint">Status</h2>
       <div class="set-grid">
         <div class="set-card"><div class="k">Firmware</div><div class="v" id="set-fw">&mdash;</div></div>
@@ -491,6 +481,7 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
           <div class="cfg-tab" data-g="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</div>
           <div class="cfg-tab" data-g="factory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Factory settings</div>
           <div class="cfg-tab" data-g="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M21 20c0-2.4-1.3-4.5-3.3-5.4"/></svg>User accounts</div>
+          <div class="cfg-tab" data-g="display"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Display</div>
         </div>
         <div class="set2-main" id="cfg-body">Loading&hellip;</div>
       </div>
@@ -851,12 +842,7 @@ function applyTrendStyle(){
   $("trend-card").classList.toggle("tv",trendStyle==="values");
   if(curScreen==="trend")loadTrend();
 }
-$("set-trendstyle").value=trendStyle;
-$("set-trendstyle").onchange=()=>{
-  trendStyle=$("set-trendstyle").value;
-  localStorage.setItem("trendStyle",trendStyle);
-  applyTrendStyle();
-};
+/* trend style is now edited from Settings > Display (see renderDisplay) */
 $("trend-cv").onmousemove=e=>{
   if(!TP.length)return;
   const rc=$("trend-cv").getBoundingClientRect(),L=60,pw=rc.width-60-18;
@@ -1062,7 +1048,9 @@ const GMETA={
   users:{t:"User accounts",d:"Recorder accounts, roles, PINs and per-user PIN expiry. Super Admin & Admin only.",
     ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M21 20c0-2.4-1.3-4.5-3.3-5.4"/></svg>'},
   factory:{t:"Factory settings",d:"Data source and 21 CFR Part 11 compliance mode. Super Admin only.",
-    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>'}
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>'},
+  display:{t:"Display",d:"How this browser lays out the dashboard. Saved in this browser only - no password needed.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>'}
 };
 function cfgHead(g){const m=GMETA[g];if(!m)return"";
   return `<div class="cfg-head"><div class="cfg-hic">${m.ic}</div><div><div class="cfg-ht">${m.t}</div><div class="cfg-hd">${cesc(m.d)}</div></div></div>`;}
@@ -1101,10 +1089,21 @@ function rToggle(lbl,desc,id,on){
 }
 function cfgHeader(g){
   const m=GMETA[g]||{t:g,d:"",ic:""},s=CFG.sess,roles=["Operator","Supervisor","Admin","Super admin"];
-  const who=s.cfr?((s.name||"user")+(s.role>=0?" · "+(roles[s.role]||""):"")):"service password";
+  let chip="";
+  if(s&&s.unlocked){
+    const who=s.cfr?((s.name||"user")+(s.role>=0?" · "+(roles[s.role]||""):"")):"service password";
+    chip=`<div class="cfg-whochip">&#128275; ${cesc(who)}<button class="cfg-lock" id="cfg-lockbtn">Lock</button></div>`;
+  }
   return `<div class="cfg-head"><div class="cfg-hic">${m.ic}</div>`+
-    `<div style="flex:1;min-width:0"><div class="cfg-ht">${m.t}</div><div class="cfg-hd">${cesc(m.d)}</div></div>`+
-    `<div class="cfg-whochip">&#128275; ${cesc(who)}<button class="cfg-lock" id="cfg-lockbtn">Lock</button></div></div>`;
+    `<div style="flex:1;min-width:0"><div class="cfg-ht">${m.t}</div><div class="cfg-hd">${cesc(m.d)}</div></div>`+chip+`</div>`;
+}
+function renderDisplay(B){
+  B.innerHTML=cfgHeader("display")+`<div class="cfg-inner">`+
+    rSelect("Trend chart style","How the Trend screen is laid out in this browser","f_trendstyle",trendStyle,
+      [["line","Line (full width)"],["values","Line + values (table)"],["vertical","Vertical (time top → bottom)"]])+
+    `</div><div class="cfg-foot"><span class="cfg-msg" style="color:var(--mut)">Display options are saved in this browser.</span></div>`;
+  const lb=$("cfg-lockbtn");if(lb)lb.onclick=doLock;
+  const sel=$("f_trendstyle");if(sel)sel.onchange=()=>{trendStyle=sel.value;localStorage.setItem("trendStyle",trendStyle);applyTrendStyle();};
 }
 function rGroup(t){return `<div class="cfg-group">${t}</div>`;}
 function cfgFoot(){return `<div class="cfg-foot"><button class="cfg-save" id="cfg-savebtn">Save changes</button><span class="cfg-msg" id="cfg-msg"></span></div>`;}
@@ -1127,17 +1126,19 @@ function usersTable(){
 }
 function renderCfg(){
   if(!CFG){loadCfg();return;}
-  const B=$("cfg-body"),nav=$("cfg-tabs"),wrap=$("cfg-wrap");
-  if(!CFG.sess||!CFG.sess.unlocked){if(nav)nav.style.display="none";if(wrap)wrap.style.gridTemplateColumns="1fr";renderUnlock(B);return;}
-  if(nav)nav.style.display="";if(wrap)wrap.style.gridTemplateColumns="";
-  /* Users tab: only when 21 CFR is on and you're Admin+.  Factory settings
-     (data source + 21 CFR switch): Super Admin only. */
-  const canUsers=CFG.sess.cfr&&CFG.sess.role>=2;
-  const canFactory=CFG.sess.role>=3;
+  const B=$("cfg-body"),nav=$("cfg-tabs");
+  const unlocked=!!(CFG.sess&&CFG.sess.unlocked);
+  /* Users: only when 21 CFR is on and Admin+.  Factory settings (data source
+     + 21 CFR switch): Super Admin only.  Both need an unlocked session.
+     Display is a browser-only preference tab - always available. */
+  const canUsers=unlocked&&CFG.sess.cfr&&CFG.sess.role>=2;
+  const canFactory=unlocked&&CFG.sess.role>=3;
   const utab=nav&&nav.querySelector('[data-g="users"]');if(utab)utab.style.display=canUsers?"":"none";
   const ftab=nav&&nav.querySelector('[data-g="factory"]');if(ftab)ftab.style.display=canFactory?"":"none";
-  if((cfgGroup==="users"&&!canUsers)||(cfgGroup==="factory"&&!canFactory))cfgGroup="channels";
+  if((cfgGroup==="users"&&!canUsers)||(cfgGroup==="factory"&&!canFactory))cfgGroup=unlocked?"channels":"display";
   if(nav)nav.querySelectorAll(".cfg-tab").forEach(t=>t.classList.toggle("on",t.dataset.g==cfgGroup));
+  if(cfgGroup==="display"){renderDisplay(B);return;}
+  if(!unlocked){renderUnlock(B);return;}
 
   let inner="",warn="",chan="",isUsers=false;
   if(cfgGroup=="channels"){
@@ -1166,13 +1167,16 @@ function renderCfg(){
       rSelect("Default PIN expiry","Global PIN aging, used when a user has no individual expiry","f_expiry",CFG.cfr.expiry,[[0,"Never"],[30,"30 days"],[60,"60 days"],[90,"90 days"],[180,"180 days"],[365,"365 days"]]);
   }else if(cfgGroup=="network"){
     warn="&#9888; A wrong network change can cut off access to the recorder. Changes apply after a restart.";
-    inner=rSelect("Ethernet","Address assignment","f_ndhcp",CFG.net.dhcp,[[1,"DHCP (automatic)"],[0,"Static"]])+
+    inner=rGroup("Ethernet")+
+      rSelect("Addressing","How the wired address is assigned","f_ndhcp",CFG.net.dhcp,[[1,"DHCP (automatic)"],[0,"Static (manual)"]])+
       rInput("IP address","","f_nip",CFG.net.ip)+rInput("Subnet mask","","f_nmask",CFG.net.mask)+
-      rInput("Gateway","","f_ngw",CFG.net.gw)+rInput("DNS","","f_ndns",CFG.net.dns)+
+      rInput("Gateway","","f_ngw",CFG.net.gw)+rInput("DNS server","","f_ndns",CFG.net.dns)+
+      rGroup("Wi-Fi")+
       rToggle("Wi-Fi","Enable the wireless interface","f_wen",CFG.wifi.enable)+
-      rInput("Wi-Fi SSID","","f_wssid",CFG.wifi.ssid)+
-      rInput("Wi-Fi password",CFG.wifi.haspass?"A password is set — leave blank to keep it":"","f_wpass","","password")+
-      rToggle("Modbus TCP server","Serve live values over Modbus TCP","f_tcp",CFG.net.tcp_enable)+
+      rInput("Network name (SSID)","","f_wssid",CFG.wifi.ssid)+
+      rInput("Password",CFG.wifi.haspass?"A password is set — leave blank to keep it":"","f_wpass","","password")+
+      rGroup("Modbus TCP server")+
+      rToggle("Enabled","Serve live values to SCADA/PLC over Modbus TCP","f_tcp",CFG.net.tcp_enable)+
       rInput("TCP port","","f_tcpport",CFG.net.tcp_port);
   }else if(cfgGroup=="users"){isUsers=true;}
 
