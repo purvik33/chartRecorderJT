@@ -3375,6 +3375,12 @@ static void pin_key_cb(lv_event_t *e)
     lv_textarea_add_text(pin_ta, txt);
 }
 
+static void pin_cancel_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    if (pin_dlg) { lv_obj_delete(pin_dlg); pin_dlg = NULL; }
+}
+
 static void pin_dialog_open(void)
 {
     static const char *pin_map[] = {
@@ -3405,7 +3411,22 @@ static void pin_dialog_open(void)
     lv_label_set_text(title, LV_SYMBOL_SETTINGS "  Service password");
     lv_obj_set_style_text_font(title, &font_units_16, 0);
     lv_obj_set_style_text_color(title, COL_TEXT, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 4);
+
+    /* explicit close button - a mis-tap into this dialog must always be
+     * escapable without knowing the service password */
+    lv_obj_t *xb = lv_button_create(box);
+    lv_obj_set_size(xb, 36, 30);
+    lv_obj_align(xb, LV_ALIGN_TOP_RIGHT, 0, -2);
+    lv_obj_set_style_bg_color(xb, COL_BG, 0);
+    lv_obj_set_style_border_color(xb, COL_BORDER, 0);
+    lv_obj_set_style_border_width(xb, 1, 0);
+    lv_obj_set_style_shadow_width(xb, 0, 0);
+    lv_obj_add_event_cb(xb, pin_cancel_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *xl = lv_label_create(xb);
+    lv_label_set_text(xl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_color(xl, COL_TEXT, 0);
+    lv_obj_center(xl);
 
     pin_ta = lv_textarea_create(box);
     lv_textarea_set_one_line(pin_ta, true);
