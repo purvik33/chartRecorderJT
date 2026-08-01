@@ -78,6 +78,23 @@ static const ch_profile_t profiles[CH_PER_GROUP] = {
     { "RH", "%RH",   "4-20 mA",    0.0f,  100.0f,   85.0f },
 };
 
+/* ---- realistic demo model (product video / showroom) ---------------------
+ * Each channel position sits at a believable operating point with slow drift
+ * and light measurement noise, instead of the old full-range sine sweep that
+ * made a Pt-100 swing 60..590 C. base = nominal, amp = slow-drift amplitude,
+ * period = drift period (s), noise = per-sample measurement noise. */
+typedef struct { float base, amp, period, noise; } sim_shape_t;
+static const sim_shape_t shp[CH_PER_GROUP] = {
+    {  23.5f,  1.2f, 2400.0f, 0.10f },  /* Pt-100  inlet temp      C    */
+    {  74.0f,  2.5f, 1800.0f, 0.20f },  /* Pt-100  jacket temp     C    */
+    {   4.15f, 0.20f,1200.0f, 0.02f },  /* PT      line pressure   bar  */
+    {  61.0f,  5.0f, 1500.0f, 0.50f },  /* FT      feed flow       m3/h */
+    { 184.0f,  3.5f, 3000.0f, 0.40f },  /* Type-K  reactor temp    C    */
+    { 236.0f,  4.0f, 2100.0f, 0.50f },  /* Type-K  preheater temp  C    */
+    {  65.0f, 20.0f, 3600.0f, 0.15f },  /* LT      tank level      %  (triangle) */
+    {  54.0f,  3.5f, 2700.0f, 0.30f },  /* RH      room humidity   %RH  */
+};
+
 static float phase[CH_TOTAL];
 static uint32_t tick;
 
@@ -103,25 +120,51 @@ void data_model_init(void)
         c->div    = 10.0f;
         c->status = CH_OK;
 
-        phase[i] = frand() * 6.28f;
-        c->value = p->lo + (p->hi - p->lo) * (0.4f + 0.2f * frand());
+        phase[i] = (float)(i / CH_PER_GROUP) * 0.7f + (float)(i % CH_PER_GROUP) * 1.3f;
+        c->value = shp[i % CH_PER_GROUP].base;
     }
 }
 
 void data_sim_step(void)
 {
     tick++;
+    time_t now = time(NULL);
+    /* seconds-of-day in DOUBLE. Never convert a full Unix timestamp to
+     * float: float32 quantises ~1.75e9 to ~256 s steps, which freezes the
+     * drift into a staircase and destroys the excursion timing. */
+    double t = (double)(now % 86400);
+
     for (int i = 0; i < CH_TOTAL; i++) {
-        channel_t *c = &g_ch[i];
-        float mid  = c->lo + (c->hi - c->lo) * 0.5f;
-        float amp  = (c->hi - c->lo) * 0.25f;
-        float t    = (float)tick * 0.02f;
+        channel_t *c    = &g_ch[i];
+        int pos         = i % CH_PER_GROUP;
+        int card        = i / CH_PER_GROUP;
+        const sim_shape_t *s = &shp[pos];
+        double v;
 
-        c->value = mid
-                 + amp * sinf(t + phase[i])
-                 + (c->hi - c->lo) * 0.005f * (frand() - 0.5f);
+        if (pos == 6) {
+            /* tank level: slow triangle 45..85 % (fill / drain) */
+            double u = fmod(t / s->period + phase[i], 1.0);
+            if (u < 0.0) u += 1.0;
+            v = 45.0 + 40.0 * (u < 0.5 ? u * 2.0 : 2.0 - u * 2.0);
+        } else {
+            v = s->base + s->amp * sin(6.283185 * t / s->period + phase[i]);
+        }
 
-        /* make CH3 of card 1 wander into high alarm now and then */
-        if (i == 2) c->value = mid + amp * 1.6f * sinf(t * 0.35f);
+        /* small per-card spread so the 40 sensors read as distinct */
+        v += (double)card * s->amp * 0.15;
+
+        /* light measurement noise */
+        v += s->noise * (frand() - 0.5f) * 2.0;
+
+        /* Card 1 line pressure (CH3) makes a smooth ~90 s excursion into HI
+         * alarm (>6.5 bar) once every 5 min - a repeatable live red-alarm
+         * beat you can capture on camera. Integer modulo = exact timing. */
+        if (i == 2) {
+            long cyc = (long)(now % 300);
+            if (cyc < 90)
+                v += 3.4 * sin(3.141593 * (double)cyc / 90.0);   /* peak ~7.6 bar */
+        }
+
+        c->value = (float)v;
     }
 }
