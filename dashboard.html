@@ -1187,9 +1187,15 @@ function renderCfg(){
 
   let inner="",warn="",chan="",isUsers=false;
   if(cfgGroup=="channels"){
-    if(cfgChan>=CFG.ch.length)cfgChan=0;const c=CFG.ch[cfgChan];
-    chan=`<div class="chan-sel"><label>Channel</label><select id="cfg-ch">`+CFG.ch.map(x=>`<option value="${x.n-1}"${x.n-1==cfgChan?" selected":""}>CH${x.n} · ${cesc(x.tag)}</option>`).join("")+`</select></div>`;
-    inner=rInput("Tag","Identifier shown on the recorder screens","f_tag",c.tag)+
+    if(cfgChan>=CFG.ch.length)cfgChan=0;
+    const nch=CFG.ch.length, ng=Math.ceil(nch/8), g=Math.floor(cfgChan/8);
+    let gbar="";for(let x=0;x<ng;x++)gbar+=`<button type="button" class="subtab${x===g?" on":""}" data-g="${x}">Group ${x+1}</button>`;
+    let cbar="";for(let x=0;x<8;x++){const idx=g*8+x;if(idx>=nch)break;cbar+=`<button type="button" class="subtab${idx===cfgChan?" on":""}" data-c="${idx}">CH${idx+1}</button>`;}
+    const c=CFG.ch[cfgChan];
+    inner=`<div class="subtabs" style="margin-top:14px">`+gbar+`</div>`+
+      `<div class="subtabs" style="margin:8px 0 0">`+cbar+`</div>`+
+      `<div class="cfg-note2">Editing <b style="color:var(--ink)">CH${cfgChan+1} &middot; ${cesc(c.tag)}</b> (Group ${g+1}, CH ${g*8+1}-${g*8+8})</div>`+
+      rInput("Tag","Identifier shown on the recorder screens","f_tag",c.tag)+
       rInput("Unit","Engineering unit","f_unit",c.unit)+
       rInput("Range low","Bottom of the measuring range","f_lo",c.lo,"number")+
       rInput("Range high","Top of the measuring range","f_hi",c.hi,"number")+
@@ -1268,9 +1274,11 @@ function renderCfg(){
   B.querySelectorAll(".tgl").forEach(b=>b.onclick=()=>b.classList.toggle("on"));
   B.querySelectorAll(".eye").forEach(b=>b.onclick=()=>{const inp=$(b.dataset.t);if(!inp)return;
     const show=inp.type==="password";inp.type=show?"text":"password";b.classList.toggle("on",show);});
-  B.querySelectorAll(".subtab").forEach(b=>b.onclick=()=>{const s=b.dataset.s;subSel[cfgGroup]=s;
-    B.querySelectorAll(".subtab").forEach(x=>x.classList.toggle("on",x.dataset.s===s));
+  B.querySelectorAll(".subtab[data-s]").forEach(b=>b.onclick=()=>{const s=b.dataset.s;subSel[cfgGroup]=s;
+    B.querySelectorAll(".subtab[data-s]").forEach(x=>x.classList.toggle("on",x.dataset.s===s));
     B.querySelectorAll(".netsec").forEach(x=>{x.hidden=(x.dataset.sec!==s);});});
+  B.querySelectorAll(".subtab[data-g]").forEach(b=>b.onclick=()=>{cfgChan=(+b.dataset.g)*8;renderCfg();});
+  B.querySelectorAll(".subtab[data-c]").forEach(b=>b.onclick=()=>{cfgChan=+b.dataset.c;renderCfg();});
 }
 function renderUnlock(B){
   const s=CFG.sess;let h;
