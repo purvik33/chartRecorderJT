@@ -498,6 +498,7 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
           <div class="cfg-tab on" data-g="channels"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Channels &amp; alarms</div>
           <div class="cfg-tab" data-g="logging"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg>Logging</div>
           <div class="cfg-tab" data-g="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</div>
+          <div class="cfg-tab" data-g="email"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>Email</div>
           <div class="cfg-tab" data-g="factory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Factory settings</div>
           <div class="cfg-tab" data-g="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M21 20c0-2.4-1.3-4.5-3.3-5.4"/></svg>User accounts</div>
           <div class="cfg-tab" data-g="display"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Display</div>
@@ -1051,7 +1052,7 @@ function fillSettings(){
 }
 
 /* ---- editable configuration (reads/writes /api/config) ---- */
-let CFG=null, cfgGroup="channels", cfgChan=0, cfgInited=false, subSel={network:"ethernet",factory:"source"};
+let CFG=null, cfgGroup="channels", cfgChan=0, cfgInited=false, emGrp=0, subSel={network:"ethernet",factory:"source",email:"smtp"};
 const EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 const GMETA={
   channels:{t:"Channels & alarms",d:"Tag, engineering unit, range and Hi/Lo alarm setpoints for each measurement channel.",
@@ -1069,7 +1070,9 @@ const GMETA={
   factory:{t:"Factory settings",d:"Data source and 21 CFR Part 11 compliance mode. Super Admin only.",
     ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>'},
   display:{t:"Display",d:"How this browser lays out the dashboard. Saved in this browser only - no password needed.",
-    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>'}
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>'},
+  email:{t:"Email notifications",d:"SMTP server and alarm recipients. On any alarm the recorder emails the master list plus that channel group's recipients.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'}
 };
 function cfgHead(g){const m=GMETA[g];if(!m)return"";
   return `<div class="cfg-head"><div class="cfg-hic">${m.ic}</div><div><div class="cfg-ht">${m.t}</div><div class="cfg-hd">${cesc(m.d)}</div></div></div>`;}
@@ -1227,6 +1230,26 @@ function renderCfg(){
       `<div class="netsec" data-sec="ethernet"${cur==="ethernet"?"":" hidden"}>`+eth+`</div>`+
       `<div class="netsec" data-sec="wifi"${cur==="wifi"?"":" hidden"}>`+wifi+`</div>`+
       `<div class="netsec" data-sec="tcp"${cur==="tcp"?"":" hidden"}>`+tcp+`</div>`;
+  }else if(cfgGroup=="email"){
+    const em=CFG.email||{master:[],group:[]};
+    const smtp=rToggle("Email notifications","Send an email whenever an alarm occurs","f_een",em.enable)+
+      rInput("SMTP server","e.g. smtp.gmail.com","f_ehost",em.host)+
+      rInput("Port","587 STARTTLS · 465 SSL · 25 plain","f_eport",em.port,"number")+
+      rSelect("Security","","f_esec",em.security,[[1,"STARTTLS"],[2,"SSL / TLS"],[0,"None"]])+
+      rInput("Username","Usually your full email address","f_euser",em.user)+
+      rInput("Password",em.haspass?"A password is set — leave blank to keep it":"For Gmail etc. use an app password","f_epass","","password")+
+      rInput("From address","Shown as the sender","f_efrom",em.from);
+    let mst="";for(let i=0;i<5;i++)mst+=rInput("Master "+(i+1),i==0?"Every alarm, on any group, is sent to the master list":"","em_m"+i,(em.master[i]||""));
+    let grows="";for(let i=0;i<5;i++)grows+=rInput("Recipient "+(i+1),"","em_g"+i,((em.group[emGrp]||[])[i]||""));
+    const rcpt=rGroup("Master recipients")+mst+
+      rGroup("Per-group recipients")+
+      rSelect("Group","Alarms on these channels also notify this set","em_gsel",emGrp,Array.from({length:5},(_,x)=>[x,`Group ${x+1}  ·  CH ${x*8+1}-${x*8+8}`]))+
+      grows;
+    const cur2=subSel.email;
+    const sb=(id,lbl)=>`<button type="button" class="subtab${cur2===id?" on":""}" data-s="${id}">${lbl}</button>`;
+    inner=`<div class="subtabs">`+sb("smtp","SMTP server")+sb("rcpt","Recipients")+`</div>`+
+      `<div class="netsec" data-sec="smtp"${cur2==="smtp"?"":" hidden"}>`+smtp+`</div>`+
+      `<div class="netsec" data-sec="rcpt"${cur2==="rcpt"?"":" hidden"}>`+rcpt+`</div>`;
   }else if(cfgGroup=="users"){isUsers=true;}
 
   let html=cfgHeader(cfgGroup);
@@ -1236,6 +1259,7 @@ function renderCfg(){
   B.innerHTML=html;
   const lb=$("cfg-lockbtn");if(lb)lb.onclick=doLock;
   const chsel=$("cfg-ch");if(chsel)chsel.onchange=()=>{cfgChan=+chsel.value;renderCfg();};
+  const gsel=$("em_gsel");if(gsel)gsel.onchange=()=>{emGrp=+gsel.value;renderCfg();};
   const sb=$("cfg-savebtn");if(sb)sb.onclick=saveCfg;
   B.querySelectorAll(".tgl").forEach(b=>b.onclick=()=>b.classList.toggle("on"));
   B.querySelectorAll(".eye").forEach(b=>b.onclick=()=>{const inp=$(b.dataset.t);if(!inp)return;
@@ -1299,6 +1323,7 @@ async function saveCfg(){
   }else if(cfgGroup=="logging"){add("store_interval",$("f_si").value);add("retention_days",$("f_ret").value);}
   else if(cfgGroup=="factory"){const tg=id=>$(id).classList.contains("on")?1:0;add("source",$("f_src").value);add("cards",$("f_cards").value);add("baud",$("f_baud").value);add("port",$("f_port").value);add("slave_base",$("f_slave").value);add("cfr_enable",tg("f_cfr"));add("esign_enable",tg("f_esign"));add("pin_expiry_days",$("f_expiry").value);if($("f_manuf")&&$("f_manuf").value)add("manuf_pin",$("f_manuf").value);}
   else if(cfgGroup=="network"){const tg=id=>$(id).classList.contains("on")?1:0;add("net_dhcp",$("f_ndhcp").value);add("net_ip",$("f_nip").value);add("net_mask",$("f_nmask").value);add("net_gw",$("f_ngw").value);add("net_dns",$("f_ndns").value);add("wifi_enable",tg("f_wen"));add("wifi_ssid",$("f_wssid").value);if($("f_wpass").value)add("wifi_pass",$("f_wpass").value);add("tcp_enable",tg("f_tcp"));add("tcp_port",$("f_tcpport").value);}
+  else if(cfgGroup=="email"){const tg=id=>$(id).classList.contains("on")?1:0;add("email_enable",tg("f_een"));add("smtp_host",$("f_ehost").value);add("smtp_port",$("f_eport").value);add("smtp_security",$("f_esec").value);add("smtp_user",$("f_euser").value);if($("f_epass").value)add("smtp_pass",$("f_epass").value);add("smtp_from",$("f_efrom").value);for(let i=0;i<5;i++)add("email_master"+i,$("em_m"+i).value);for(let i=0;i<5;i++)add("email_g"+emGrp+"_"+i,$("em_g"+i).value);}
   else if(cfgGroup=="users"){CFG.users.forEach((u,i)=>{add("user"+i+"_name",$("u"+i+"_name").value);if(i>0){add("user"+i+"_role",$("u"+i+"_role").value);add("user"+i+"_active",$("u"+i+"_active").value);add("user"+i+"_expiry",$("u"+i+"_exp").value);}const pv=$("u"+i+"_pin").value;if(pv&&pv!==(u.pin||""))add("user"+i+"_pin",pv);});}
   try{const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:P.join("&")});
     if(r.ok){msg.className="cfg-msg ok";msg.textContent="Saved ✓";setTimeout(()=>loadCfg(true),500);return;}
