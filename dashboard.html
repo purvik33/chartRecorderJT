@@ -258,9 +258,10 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 .cfg-group{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--mut);
   padding:22px 0 4px}
 .cfg-group:first-child{padding-top:8px}
-.subtabs{display:inline-flex;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:10px;
-  padding:4px;margin:14px 0 2px}
-.subtab{background:transparent;border:none;color:var(--mut);border-radius:7px;padding:7px 16px;font-size:13px;
+.subtabs{display:inline-flex;flex-wrap:wrap;gap:4px;background:var(--bg);border:1px solid var(--line);
+  border-radius:10px;padding:4px;margin:14px 0 2px}
+.cfg-note2{color:var(--mut);font-size:12.5px;padding:14px 0 0}
+.subtab{background:transparent;border:none;color:var(--mut);border-radius:7px;padding:7px 15px;font-size:13px;
   font-weight:600;cursor:pointer;font-family:inherit;transition:background .15s,color .15s}
 .subtab:hover{color:var(--ink)}
 .subtab.on{background:var(--acc);color:#07131f}
@@ -1239,17 +1240,20 @@ function renderCfg(){
       rInput("Username","Usually your full email address","f_euser",em.user)+
       rInput("Password",em.haspass?"A password is set — leave blank to keep it":"For Gmail etc. use an app password","f_epass","","password")+
       rInput("From address","Shown as the sender","f_efrom",em.from);
-    let mst="";for(let i=0;i<5;i++)mst+=rInput("Master "+(i+1),i==0?"Every alarm, on any group, is sent to the master list":"","em_m"+i,(em.master[i]||""));
-    let grows="";for(let i=0;i<5;i++)grows+=rInput("Recipient "+(i+1),"","em_g"+i,((em.group[emGrp]||[])[i]||""));
-    const rcpt=rGroup("Master recipients")+mst+
-      rGroup("Per-group recipients")+
-      rSelect("Group","Alarms on these channels also notify this set","em_gsel",emGrp,Array.from({length:5},(_,x)=>[x,`Group ${x+1}  ·  CH ${x*8+1}-${x*8+8}`]))+
-      grows;
     const cur2=subSel.email;
     const sb=(id,lbl)=>`<button type="button" class="subtab${cur2===id?" on":""}" data-s="${id}">${lbl}</button>`;
-    inner=`<div class="subtabs">`+sb("smtp","SMTP server")+sb("rcpt","Recipients")+`</div>`+
-      `<div class="netsec" data-sec="smtp"${cur2==="smtp"?"":" hidden"}>`+smtp+`</div>`+
-      `<div class="netsec" data-sec="rcpt"${cur2==="rcpt"?"":" hidden"}>`+rcpt+`</div>`;
+    let bar=`<div class="subtabs">`+sb("smtp","SMTP server")+sb("master","Master")+
+      [0,1,2,3,4].map(g=>sb("g"+g,"Group "+(g+1))).join("")+`</div>`;
+    let mst="";for(let i=0;i<5;i++)mst+=rInput("Master "+(i+1),"","em_m"+i,(em.master[i]||""));
+    let secs=`<div class="netsec" data-sec="smtp"${cur2==="smtp"?"":" hidden"}>`+smtp+`</div>`+
+      `<div class="netsec" data-sec="master"${cur2==="master"?"":" hidden"}>`+
+        `<div class="cfg-note2">Every alarm, on any group, is sent to these addresses.</div>`+mst+`</div>`;
+    for(let g=0;g<5;g++){
+      let gr="";for(let i=0;i<5;i++)gr+=rInput("Recipient "+(i+1),"","em_g"+g+"_"+i,((em.group[g]||[])[i]||""));
+      secs+=`<div class="netsec" data-sec="g${g}"${cur2==="g"+g?"":" hidden"}>`+
+        `<div class="cfg-note2">Alarms on CH ${g*8+1}-${g*8+8} also notify these addresses.</div>`+gr+`</div>`;
+    }
+    inner=bar+secs;
   }else if(cfgGroup=="users"){isUsers=true;}
 
   let html=cfgHeader(cfgGroup);
@@ -1323,7 +1327,7 @@ async function saveCfg(){
   }else if(cfgGroup=="logging"){add("store_interval",$("f_si").value);add("retention_days",$("f_ret").value);}
   else if(cfgGroup=="factory"){const tg=id=>$(id).classList.contains("on")?1:0;add("source",$("f_src").value);add("cards",$("f_cards").value);add("baud",$("f_baud").value);add("port",$("f_port").value);add("slave_base",$("f_slave").value);add("cfr_enable",tg("f_cfr"));add("esign_enable",tg("f_esign"));add("pin_expiry_days",$("f_expiry").value);if($("f_manuf")&&$("f_manuf").value)add("manuf_pin",$("f_manuf").value);}
   else if(cfgGroup=="network"){const tg=id=>$(id).classList.contains("on")?1:0;add("net_dhcp",$("f_ndhcp").value);add("net_ip",$("f_nip").value);add("net_mask",$("f_nmask").value);add("net_gw",$("f_ngw").value);add("net_dns",$("f_ndns").value);add("wifi_enable",tg("f_wen"));add("wifi_ssid",$("f_wssid").value);if($("f_wpass").value)add("wifi_pass",$("f_wpass").value);add("tcp_enable",tg("f_tcp"));add("tcp_port",$("f_tcpport").value);}
-  else if(cfgGroup=="email"){const tg=id=>$(id).classList.contains("on")?1:0;add("email_enable",tg("f_een"));add("smtp_host",$("f_ehost").value);add("smtp_port",$("f_eport").value);add("smtp_security",$("f_esec").value);add("smtp_user",$("f_euser").value);if($("f_epass").value)add("smtp_pass",$("f_epass").value);add("smtp_from",$("f_efrom").value);for(let i=0;i<5;i++)add("email_master"+i,$("em_m"+i).value);for(let i=0;i<5;i++)add("email_g"+emGrp+"_"+i,$("em_g"+i).value);}
+  else if(cfgGroup=="email"){const tg=id=>$(id).classList.contains("on")?1:0;add("email_enable",tg("f_een"));add("smtp_host",$("f_ehost").value);add("smtp_port",$("f_eport").value);add("smtp_security",$("f_esec").value);add("smtp_user",$("f_euser").value);if($("f_epass").value)add("smtp_pass",$("f_epass").value);add("smtp_from",$("f_efrom").value);for(let i=0;i<5;i++)add("email_master"+i,$("em_m"+i).value);for(let g=0;g<5;g++)for(let i=0;i<5;i++)add("email_g"+g+"_"+i,$("em_g"+g+"_"+i).value);}
   else if(cfgGroup=="users"){CFG.users.forEach((u,i)=>{add("user"+i+"_name",$("u"+i+"_name").value);if(i>0){add("user"+i+"_role",$("u"+i+"_role").value);add("user"+i+"_active",$("u"+i+"_active").value);add("user"+i+"_expiry",$("u"+i+"_exp").value);}const pv=$("u"+i+"_pin").value;if(pv&&pv!==(u.pin||""))add("user"+i+"_pin",pv);});}
   try{const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:P.join("&")});
     if(r.ok){msg.className="cfg-msg ok";msg.textContent="Saved ✓";setTimeout(()=>loadCfg(true),500);return;}
