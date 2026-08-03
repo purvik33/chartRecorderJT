@@ -10,4 +10,9 @@ void email_init(void);   /* start the background sender thread */
  * lock held (it reads g_ch[ch]); it only copies + queues, never blocks. */
 void email_alarm_notify(int ch, int type, float value);
 
+/* Send a test email now (synchronous) with the current SMTP settings, to
+ * the master recipients (or the From address if none). Returns:
+ * 0 = sent, 1 = send failed, 2 = not configured. */
+int email_send_test(void);
+
 #endif

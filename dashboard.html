@@ -291,6 +291,9 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 .cfg-save{background:var(--acc);color:#07131f;border:none;border-radius:9px;padding:11px 24px;
   font-weight:700;font-size:14px;cursor:pointer;transition:filter .15s}
 .cfg-save:hover{filter:brightness(1.08)}
+.cfg-save.cfg-alt{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+.cfg-save.cfg-alt:hover{background:rgba(79,195,247,.1);filter:none}
+.cfg-save:disabled{opacity:.6;cursor:default}
 .cfg-tblwrap{overflow-x:auto;padding:6px 24px 0}
 .cfg-unlock{padding:30px 26px}
 .cfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px 18px}
@@ -1245,7 +1248,8 @@ function renderCfg(){
       rSelect("Security","","f_esec",em.security,[[1,"STARTTLS"],[2,"SSL / TLS"],[0,"None"]])+
       rInput("Username","Usually your full email address","f_euser",em.user)+
       rInput("Password",em.haspass?"A password is set — leave blank to keep it":"For Gmail etc. use an app password","f_epass","","password")+
-      rInput("From address","Shown as the sender","f_efrom",em.from);
+      rInput("From address","Shown as the sender","f_efrom",em.from)+
+      `<div class="cfg-actions" style="margin-top:18px"><button type="button" class="cfg-save cfg-alt" id="em_test">Send test email</button><span class="cfg-msg" id="em_testmsg"></span></div>`;
     const cur2=subSel.email;
     const sb=(id,lbl)=>`<button type="button" class="subtab${cur2===id?" on":""}" data-s="${id}">${lbl}</button>`;
     let bar=`<div class="subtabs">`+sb("smtp","SMTP server")+sb("master","Master")+
@@ -1279,6 +1283,7 @@ function renderCfg(){
     B.querySelectorAll(".netsec").forEach(x=>{x.hidden=(x.dataset.sec!==s);});});
   B.querySelectorAll(".subtab[data-g]").forEach(b=>b.onclick=()=>{cfgChan=(+b.dataset.g)*8;renderCfg();});
   B.querySelectorAll(".subtab[data-c]").forEach(b=>b.onclick=()=>{cfgChan=+b.dataset.c;renderCfg();});
+  const et=$("em_test");if(et)et.onclick=doTestEmail;
 }
 function renderUnlock(B){
   const s=CFG.sess;let h;
@@ -1325,6 +1330,21 @@ async function doUnlock(){
   }catch(e){msg.className="cfg-msg err";msg.textContent="Connection error";}
 }
 async function doLock(){try{await fetch("/api/settings/lock",{method:"POST"});}catch(e){}CFG=null;loadCfg(true);}
+async function doTestEmail(){
+  const msg=$("em_testmsg"),btn=$("em_test");if(!msg)return;
+  msg.className="cfg-msg";msg.textContent="Saving & sending…";if(btn)btn.disabled=true;
+  const P=[],add=(k,v)=>P.push(k+"="+encodeURIComponent(v)),tg=id=>$(id).classList.contains("on")?1:0;
+  add("email_enable",tg("f_een"));add("smtp_host",$("f_ehost").value);add("smtp_port",$("f_eport").value);add("smtp_security",$("f_esec").value);add("smtp_user",$("f_euser").value);if($("f_epass").value)add("smtp_pass",$("f_epass").value);add("smtp_from",$("f_efrom").value);
+  for(let i=0;i<5;i++)add("email_master"+i,$("em_m"+i).value);
+  try{
+    await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:P.join("&")});
+    const r=await fetch("/api/settings/test-email",{method:"POST"});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.ok){msg.className="cfg-msg ok";msg.textContent="Test email sent ✓ — check the inbox";}
+    else{msg.className="cfg-msg err";msg.textContent=j.err||"Send failed";}
+  }catch(e){msg.className="cfg-msg err";msg.textContent="Connection error";}
+  if(btn)btn.disabled=false;
+}
 async function saveCfg(){
   const msg=$("cfg-msg");msg.className="cfg-msg";msg.textContent="Saving…";
   const P=[],add=(k,v)=>P.push(k+"="+encodeURIComponent(v));

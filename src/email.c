@@ -15,6 +15,7 @@
 void email_init(void) {}
 void email_alarm_notify(int ch, int type, float value)
 { (void)ch; (void)type; (void)value; }
+int email_send_test(void) { return 2; }
 #else
 #include <pthread.h>
 #include <time.h>
@@ -155,6 +156,64 @@ static void *worker(void *arg)
         }
     }
     return NULL;
+}
+
+int email_send_test(void)
+{
+    if (!g_cfg.smtp_host[0]) return 2;
+    const char *from = g_cfg.smtp_from[0] ? g_cfg.smtp_from : g_cfg.smtp_user;
+    if (!from[0]) return 2;
+
+    const char *rcpt[EMAIL_MASTERS + 1];
+    int nr = 0;
+    for (int i = 0; i < EMAIL_MASTERS; i++)
+        if (g_cfg.email_master[i][0]) rcpt[nr++] = g_cfg.email_master[i];
+    if (nr == 0) rcpt[nr++] = from;     /* self-test to the From address */
+
+    time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
+    char ts[32];
+    snprintf(ts, sizeof(ts), "%04d-%02d-%02d %02d:%02d:%02d",
+             tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+    FILE *m = fopen("/tmp/pr40_test.txt", "w");
+    if (!m) return 1;
+    fprintf(m, "From: %s\r\n", from);
+    fprintf(m, "To: ");
+    for (int i = 0; i < nr; i++) fprintf(m, "%s%s", i ? ", " : "", rcpt[i]);
+    fprintf(m, "\r\n");
+    fprintf(m, "Subject: JETPACE PR-40 - test email\r\n");
+    fprintf(m, "Content-Type: text/plain; charset=UTF-8\r\n\r\n");
+    fprintf(m, "This is a test message from the JETPACE PR-40 recorder.\r\n\r\n");
+    fprintf(m, "If you received this, alarm email notifications are set up correctly.\r\n");
+    fprintf(m, "Sent: %s\r\n", ts);
+    fclose(m);
+
+    FILE *c = fopen("/tmp/pr40_test.cfg", "w");
+    if (!c) { remove("/tmp/pr40_test.txt"); return 1; }
+    fprintf(c, "url = \"smtp%s://", g_cfg.smtp_security == 2 ? "s" : "");
+    cfg_esc(c, g_cfg.smtp_host);
+    fprintf(c, ":%d\"\n", g_cfg.smtp_port);
+    if (g_cfg.smtp_security >= 1) fprintf(c, "ssl-reqd\n");
+    if (g_cfg.smtp_user[0]) {
+        fprintf(c, "user = \"");
+        cfg_esc(c, g_cfg.smtp_user); fputc(':', c); cfg_esc(c, g_cfg.smtp_pass);
+        fprintf(c, "\"\n");
+    }
+    fprintf(c, "mail-from = \""); cfg_esc(c, from); fprintf(c, "\"\n");
+    for (int i = 0; i < nr; i++) {
+        fprintf(c, "mail-rcpt = \""); cfg_esc(c, rcpt[i]); fprintf(c, "\"\n");
+    }
+    fprintf(c, "upload-file = \"/tmp/pr40_test.txt\"\n");
+    fclose(c);
+    chmod("/tmp/pr40_test.cfg", 0600);
+
+    int rc = system("curl -s --max-time 20 -K /tmp/pr40_test.cfg >/dev/null 2>&1");
+    event_log("EMAIL", rc == 0 ? "Test email sent (%d recipient%s)"
+                               : "Test email FAILED (%d recipient%s)",
+              nr, nr == 1 ? "" : "s");
+    remove("/tmp/pr40_test.cfg");
+    remove("/tmp/pr40_test.txt");
+    return rc == 0 ? 0 : 1;
 }
 
 void email_init(void)

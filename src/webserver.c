@@ -10,6 +10,7 @@
 #include "comm.h"
 #include "events.h"
 #include "users.h"
+#include "email.h"
 #include "version.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -1124,6 +1125,27 @@ static void api_lock(wsock_t s, const char *req)
     http_send(s, "200 OK", "application/json", "{\"ok\":true}", 11);
 }
 
+/* POST /api/settings/test-email - send a test message with the saved SMTP
+ * settings (needs an unlocked settings session) */
+static void api_test_email(wsock_t s, const char *req)
+{
+    sess_t *ss = sess_find(req);
+    if (!ss || ss->set_exp < time(NULL)) {
+        http_403(s, "{\"ok\":false,\"need\":\"unlock\"}");
+        return;
+    }
+    int rc = email_send_test();
+    if (rc == 0) {
+        http_send(s, "200 OK", "application/json", "{\"ok\":true}", 11);
+    } else {
+        const char *e = (rc == 2)
+            ? "{\"ok\":false,\"err\":\"Set the SMTP server and From address first\"}"
+            : "{\"ok\":false,\"err\":\"Send failed - check server, port, security and login\"}";
+        http_send(s, rc == 2 ? "400 Bad Request" : "502 Bad Gateway",
+                  "application/json", e, strlen(e));
+    }
+}
+
 /* POST /api/settings/factory-unlock - the extra factory/service password,
  * required (on top of a Super-admin login) to reach Factory settings */
 static void api_factory_unlock(wsock_t s, const char *req)
@@ -1352,6 +1374,8 @@ static void handle_client(wsock_t c)
         api_unlock(c, req);
     else if (!strcmp(path, "/api/settings/factory-unlock"))
         api_factory_unlock(c, req);
+    else if (!strcmp(path, "/api/settings/test-email"))
+        api_test_email(c, req);
     else if (!strcmp(path, "/api/settings/lock"))
         api_lock(c, req);
     else if (!strcmp(path, "/api/config")) {
