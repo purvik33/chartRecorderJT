@@ -6,6 +6,10 @@
  * device can always be recovered even if the customer changed everything */
 #define MASTER_PW "39003900"
 
+#define EMAIL_MASTERS   5   /* master recipients (all alarms) */
+#define EMAIL_GROUPS    5   /* one recipient set per channel group */
+#define EMAIL_PER_GROUP 5   /* recipients per group */
+
 typedef enum { SRC_SIM = 0, SRC_MODBUS = 1 } data_src_t;
 
 /* 21 CFR user account (see users.h for roles) */
@@ -85,6 +89,17 @@ typedef struct {
     int        esign_enable;     /* print executed e-signature on reports */
     int        pin_expiry_days;  /* PIN aging; 0 = never expires (§11.300) */
     cfr_user_t users[8];
+
+    /* ---- email alarm notifications (web-configured) ---- */
+    int  email_enable;
+    char smtp_host[64];
+    int  smtp_port;              /* 587 STARTTLS / 465 SSL / 25 plain */
+    int  smtp_security;          /* 0 none, 1 STARTTLS, 2 SSL/TLS */
+    char smtp_user[64];
+    char smtp_pass[64];
+    char smtp_from[64];
+    char email_master[EMAIL_MASTERS][64];             /* alarms on any group */
+    char email_group[EMAIL_GROUPS][EMAIL_PER_GROUP][64]; /* per-group */
 } app_cfg_t;
 
 extern app_cfg_t g_cfg;

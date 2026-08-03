@@ -58,6 +58,9 @@ static void set_defaults(void)
     strcpy(g_cfg.wifi_gw,   "192.168.1.1");
     strcpy(g_cfg.factory_pin, "1234");
     strcpy(g_cfg.manuf_pin,   "1221");
+    g_cfg.email_enable   = 0;
+    g_cfg.smtp_port      = 587;
+    g_cfg.smtp_security  = 1;   /* STARTTLS */
     /* OTA update server defaults to the product's own GitHub repo so
      * every unit can check for updates out of the box */
     strcpy(g_cfg.update_repo, "purvik33/chartRecorderJT");
@@ -139,6 +142,15 @@ void config_load(void)
             else if (!strcmp(key, "wifi_gw"))        { strncpy(g_cfg.wifi_gw,   val, sizeof(g_cfg.wifi_gw)-1);   g_cfg.wifi_gw[sizeof(g_cfg.wifi_gw)-1] = 0; }
             else if (!strcmp(key, "factory_pin"))    { strncpy(g_cfg.factory_pin, val, sizeof(g_cfg.factory_pin)-1); g_cfg.factory_pin[sizeof(g_cfg.factory_pin)-1] = 0; }
             else if (!strcmp(key, "manuf_pin"))      { strncpy(g_cfg.manuf_pin, val, sizeof(g_cfg.manuf_pin)-1); g_cfg.manuf_pin[sizeof(g_cfg.manuf_pin)-1] = 0; }
+            else if (!strcmp(key, "email_enable"))   g_cfg.email_enable = atoi(val);
+            else if (!strcmp(key, "smtp_host"))      { strncpy(g_cfg.smtp_host, val, sizeof(g_cfg.smtp_host)-1); g_cfg.smtp_host[sizeof(g_cfg.smtp_host)-1]=0; }
+            else if (!strcmp(key, "smtp_port"))      g_cfg.smtp_port = atoi(val);
+            else if (!strcmp(key, "smtp_security"))  g_cfg.smtp_security = atoi(val);
+            else if (!strcmp(key, "smtp_user"))      { strncpy(g_cfg.smtp_user, val, sizeof(g_cfg.smtp_user)-1); g_cfg.smtp_user[sizeof(g_cfg.smtp_user)-1]=0; }
+            else if (!strcmp(key, "smtp_pass"))      { strncpy(g_cfg.smtp_pass, val, sizeof(g_cfg.smtp_pass)-1); g_cfg.smtp_pass[sizeof(g_cfg.smtp_pass)-1]=0; }
+            else if (!strcmp(key, "smtp_from"))      { strncpy(g_cfg.smtp_from, val, sizeof(g_cfg.smtp_from)-1); g_cfg.smtp_from[sizeof(g_cfg.smtp_from)-1]=0; }
+            else if (!strncmp(key, "email_master", 12)) { int i = atoi(key+12); if (i>=0 && i<EMAIL_MASTERS) { strncpy(g_cfg.email_master[i], val, 63); g_cfg.email_master[i][63]=0; } }
+            else if (!strncmp(key, "email_g", 7))    { int g,i; if (sscanf(key,"email_g%d_%d",&g,&i)==2 && g>=0 && g<EMAIL_GROUPS && i>=0 && i<EMAIL_PER_GROUP) { strncpy(g_cfg.email_group[g][i], val, 63); g_cfg.email_group[g][i][63]=0; } }
             else if (!strcmp(key, "web_enable"))     g_cfg.web_enable = atoi(val);
             else if (!strcmp(key, "web_port"))       g_cfg.web_port = atoi(val);
             else if (!strcmp(key, "web_auth"))       g_cfg.web_auth = atoi(val);
@@ -259,6 +271,20 @@ void config_save(void)
     fprintf(f, "wifi_gw=%s\n",     g_cfg.wifi_gw);
     fprintf(f, "factory_pin=%s\n", g_cfg.factory_pin);
     fprintf(f, "manuf_pin=%s\n",   g_cfg.manuf_pin);
+
+    fprintf(f, "\n[email]\n");
+    fprintf(f, "email_enable=%d\n",  g_cfg.email_enable);
+    fprintf(f, "smtp_host=%s\n",     g_cfg.smtp_host);
+    fprintf(f, "smtp_port=%d\n",     g_cfg.smtp_port);
+    fprintf(f, "smtp_security=%d\n", g_cfg.smtp_security);
+    fprintf(f, "smtp_user=%s\n",     g_cfg.smtp_user);
+    fprintf(f, "smtp_pass=%s\n",     g_cfg.smtp_pass);
+    fprintf(f, "smtp_from=%s\n",     g_cfg.smtp_from);
+    for (int i = 0; i < EMAIL_MASTERS; i++)
+        fprintf(f, "email_master%d=%s\n", i, g_cfg.email_master[i]);
+    for (int g = 0; g < EMAIL_GROUPS; g++)
+        for (int i = 0; i < EMAIL_PER_GROUP; i++)
+            fprintf(f, "email_g%d_%d=%s\n", g, i, g_cfg.email_group[g][i]);
     fprintf(f, "\n[update]\n");
     fprintf(f, "update_repo=%s\n",  g_cfg.update_repo);
     fprintf(f, "update_token=%s\n", g_cfg.update_token);

@@ -827,6 +827,30 @@ static void api_config_get(wsock_t s, const char *req)
        g_cfg.web_enable, g_cfg.web_port, g_cfg.web_auth, g_cfg.web_user);
     AP("\"cfr\":{\"enable\":%d,\"esign\":%d,\"expiry\":%d},",
        g_cfg.cfr_enable, g_cfg.esign_enable, g_cfg.pin_expiry_days);
+    {
+        char eh[80], eu[80], ef[80];
+        jesc(eh, sizeof(eh), g_cfg.smtp_host);
+        jesc(eu, sizeof(eu), g_cfg.smtp_user);
+        jesc(ef, sizeof(ef), g_cfg.smtp_from);
+        AP("\"email\":{\"enable\":%d,\"host\":\"%s\",\"port\":%d,\"security\":%d,"
+           "\"user\":\"%s\",\"haspass\":%d,\"from\":\"%s\",\"master\":[",
+           g_cfg.email_enable, eh, g_cfg.smtp_port, g_cfg.smtp_security, eu,
+           g_cfg.smtp_pass[0] ? 1 : 0, ef);
+        for (int i = 0; i < EMAIL_MASTERS; i++) {
+            char em[80]; jesc(em, sizeof(em), g_cfg.email_master[i]);
+            AP("%s\"%s\"", i ? "," : "", em);
+        }
+        AP("],\"group\":[");
+        for (int g = 0; g < EMAIL_GROUPS; g++) {
+            AP("%s[", g ? "," : "");
+            for (int i = 0; i < EMAIL_PER_GROUP; i++) {
+                char em[80]; jesc(em, sizeof(em), g_cfg.email_group[g][i]);
+                AP("%s\"%s\"", i ? "," : "", em);
+            }
+            AP("]");
+        }
+        AP("]},");
+    }
     /* once unlocked as less than Admin (a Supervisor), the account list is
      * hidden entirely - a Supervisor must not see the users or their PINs.
      * (Still sent while locked so the login drop-down can list accounts.) */
@@ -909,6 +933,16 @@ static void cfg_set(const char *k, const char *v)
     else if (!strcmp(k, "esign_enable"))    g_cfg.esign_enable    = atoi(v) ? 1 : 0;
     else if (!strcmp(k, "pin_expiry_days")) g_cfg.pin_expiry_days = clampi(atoi(v), 0, 3650);
     else if (!strcmp(k, "manuf_pin"))     { if (*v) SETSTR(g_cfg.manuf_pin, v); }
+    /* email notifications */
+    else if (!strcmp(k, "email_enable"))  g_cfg.email_enable  = atoi(v) ? 1 : 0;
+    else if (!strcmp(k, "smtp_host"))     SETSTR(g_cfg.smtp_host, v);
+    else if (!strcmp(k, "smtp_port"))     g_cfg.smtp_port     = clampi(atoi(v), 1, 65535);
+    else if (!strcmp(k, "smtp_security")) g_cfg.smtp_security = clampi(atoi(v), 0, 2);
+    else if (!strcmp(k, "smtp_user"))     SETSTR(g_cfg.smtp_user, v);
+    else if (!strcmp(k, "smtp_pass"))   { if (*v) SETSTR(g_cfg.smtp_pass, v); }
+    else if (!strcmp(k, "smtp_from"))     SETSTR(g_cfg.smtp_from, v);
+    else if (!strncmp(k, "email_master", 12)) { int i = atoi(k+12); if (i>=0 && i<EMAIL_MASTERS) SETSTR(g_cfg.email_master[i], v); }
+    else if (!strncmp(k, "email_g", 7)) { int g,i; if (sscanf(k,"email_g%d_%d",&g,&i)==2 && g>=0 && g<EMAIL_GROUPS && i>=0 && i<EMAIL_PER_GROUP) SETSTR(g_cfg.email_group[g][i], v); }
     /* users: user<0-7>_<field> */
     else if (!strncmp(k, "user", 4) && k[4] >= '0' && k[4] <= '7' && k[5] == '_') {
         cfr_user_t *u = &g_cfg.users[k[4] - '0'];

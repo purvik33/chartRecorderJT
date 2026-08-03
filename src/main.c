@@ -9,6 +9,7 @@
 #include "events.h"
 #include "modbus_tcp.h"
 #include "webserver.h"
+#include "email.h"
 #include "diag.h"
 #include "ui/ui.h"
 #include <time.h>
@@ -123,6 +124,7 @@ int main(int argc, char **argv)
     logger_init();     /* data storage thread */
     modbus_tcp_init(); /* Modbus TCP server + Card link gateway thread */
     webserver_init();  /* read-only dashboard + CSV download        */
+    email_init();      /* alarm email notification sender           */
     diag_boot();       /* boot self test (background, results in log) */
     event_log("SYSTEM", "Logging started; interval %d s",
               g_cfg.store_interval);

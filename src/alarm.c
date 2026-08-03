@@ -1,6 +1,7 @@
 #include "alarm.h"
 #include "data_model.h"
 #include "events.h"
+#include "email.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -97,6 +98,7 @@ static void push_event(int ch, alarm_type_t type, float value)
     if (count < ALARM_HIST) count++;
 
     alarm_stage_row(e, "SET");
+    email_alarm_notify(ch, type, value);   /* queue an alarm email (if enabled) */
 }
 
 static void close_event(int ch)
