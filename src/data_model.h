@@ -35,6 +35,9 @@ typedef struct {
     float       alm_lo;      /* low alarm setpoint  */
     float       value;       /* latest engineering value */
     float       div;         /* raw-to-engineering divisor (type based) */
+    int         lin;         /* 1 = linear input: scale ADC counts to [lo,hi] */
+    float       cnt_lo;      /* ADC count that maps to range low  (user zero) */
+    float       cnt_hi;      /* ADC count that maps to range high (user span) */
     ch_status_t status;
 } channel_t;
 

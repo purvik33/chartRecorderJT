@@ -414,16 +414,27 @@ void *comm_modbus_thread(void *arg)
                     ch->status = CH_COMM;
                     continue;
                 }
+                float cnt;   /* raw reading from the card (count for linear) */
                 if (g_cfg.fmt == FMT_FLOAT) {
-                    ch->value = regs_to_float(&regs[c * 2]);
+                    cnt = regs_to_float(&regs[c * 2]);
                 } else {
                     int16_t raw = (int16_t)regs[c];
                     if (raw == 32764) { ch->status = CH_SKIP;  continue; }
                     if (raw == 32765) { ch->status = CH_UNDER; continue; }
                     if (raw == 32766) { ch->status = CH_OVER;  continue; }
                     if (raw == 32767) { ch->status = CH_OPEN;  continue; }
-                    ch->value = (float)raw /
-                                (ch->div > 0 ? ch->div : scale);
+                    cnt = (float)raw;
+                }
+                if (ch->lin && ch->cnt_hi != ch->cnt_lo) {
+                    /* linear input: card sends raw ADC counts, scale to range.
+                     * value = lo + (cnt - cnt_lo)*(hi-lo)/(cnt_hi-cnt_lo) */
+                    ch->value = ch->lo +
+                        (cnt - ch->cnt_lo) * (ch->hi - ch->lo) /
+                        (ch->cnt_hi - ch->cnt_lo);
+                } else if (g_cfg.fmt == FMT_FLOAT) {
+                    ch->value = cnt;                 /* card pre-calculated */
+                } else {
+                    ch->value = cnt / (ch->div > 0 ? ch->div : scale);
                 }
                 if (ch->status == CH_COMM || ch->status == CH_OPEN ||
                     ch->status == CH_SKIP || ch->status == CH_UNDER ||

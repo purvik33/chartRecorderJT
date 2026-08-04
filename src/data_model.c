@@ -118,6 +118,11 @@ void data_model_init(void)
         c->alm_hi = p->alm_hi;
         c->alm_lo = p->lo - 1.0f;   /* effectively disabled by default */
         c->div    = 10.0f;
+        /* linear inputs (mA / V) arrive as raw ADC counts and must be scaled
+         * to [lo,hi]; RTD/TC arrive pre-calculated from the card. */
+        c->lin    = (strchr(p->sensor, 'A') || strchr(p->sensor, 'V')) ? 1 : 0;
+        c->cnt_lo = -2000.0f;   /* ADC count at range low  (user zero) */
+        c->cnt_hi = 20000.0f;   /* ADC count at range high (user span) */
         c->status = CH_OK;
 
         phase[i] = (float)(i / CH_PER_GROUP) * 0.7f + (float)(i % CH_PER_GROUP) * 1.3f;

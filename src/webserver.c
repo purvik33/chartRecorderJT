@@ -879,9 +879,11 @@ static void api_config_get(wsock_t s, const char *req)
         jesc(tg, sizeof(tg), g_ch[i].tag);
         jesc(un, sizeof(un), g_ch[i].unit);
         AP("%s{\"n\":%d,\"tag\":\"%s\",\"unit\":\"%s\",\"lo\":%g,\"hi\":%g,"
-           "\"almhi\":%g,\"almlo\":%g}", i ? "," : "", i + 1, tg, un,
+           "\"almhi\":%g,\"almlo\":%g,\"lin\":%d,\"cntlo\":%g,\"cnthi\":%g}",
+           i ? "," : "", i + 1, tg, un,
            (double)g_ch[i].lo, (double)g_ch[i].hi,
-           (double)g_ch[i].alm_hi, (double)g_ch[i].alm_lo);
+           (double)g_ch[i].alm_hi, (double)g_ch[i].alm_lo,
+           g_ch[i].lin, (double)g_ch[i].cnt_lo, (double)g_ch[i].cnt_hi);
     }
     data_unlock();
     AP("]}");
@@ -968,6 +970,9 @@ static void cfg_set(const char *k, const char *v)
             else if (!strcmp(f, "hi"))    c->hi     = (float)atof(v);
             else if (!strcmp(f, "almhi")) c->alm_hi = (float)atof(v);
             else if (!strcmp(f, "almlo")) c->alm_lo = (float)atof(v);
+            else if (!strcmp(f, "lin"))   c->lin    = atoi(v);
+            else if (!strcmp(f, "cntlo")) c->cnt_lo = (float)atof(v);
+            else if (!strcmp(f, "cnthi")) c->cnt_hi = (float)atof(v);
             data_unlock();
         }
     }

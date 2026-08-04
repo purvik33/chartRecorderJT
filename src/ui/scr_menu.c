@@ -452,6 +452,17 @@ static void ch_save_cb(lv_event_t *e)
     c->hi     = (float)atof(lv_textarea_get_text(ta_hi));
     c->alm_hi = (float)atof(lv_textarea_get_text(ta_ahi));
     c->alm_lo = (float)atof(lv_textarea_get_text(ta_alo));
+    /* linear input types (12-19) are scaled from ADC counts to [lo,hi] by
+     * the recorder; the user zero/span are the count endpoints. RTD/TC
+     * (1-11) come pre-calculated from the card, so no scaling. */
+    {
+        int ity = chform_type();
+        c->lin = (ity >= 12 && ity <= 19) ? 1 : 0;
+        if (c->lin) {
+            c->cnt_lo = (float)atof(lv_textarea_get_text(ta_uzero));
+            c->cnt_hi = (float)atof(lv_textarea_get_text(ta_uspan));
+        }
+    }
     data_unlock();
     config_save();
     event_log("CONFIG", "CH%d setup saved (%s)", ch + 1,
