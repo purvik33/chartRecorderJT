@@ -6,6 +6,7 @@
 #include "data_model.h"
 #include "alarm.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
