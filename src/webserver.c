@@ -812,9 +812,10 @@ static void api_config_get(wsock_t s, const char *req)
     AP("{\"sess\":{\"cfr\":%d,\"unlocked\":%d,\"role\":%d,\"name\":\"%s\",\"factory\":%d},",
        g_cfg.cfr_enable ? 1 : 0, unlocked, unlocked ? ss->cfr_role : -1, uname, factory);
     AP("\"comm\":{\"source\":%d,\"port\":\"%s\",\"baud\":%d,\"cards\":%d,"
-       "\"slave_base\":%d,\"func\":%d,\"reg_base\":%d,\"word_order\":%d,\"fmt\":%d},",
+       "\"slave_base\":%d,\"func\":%d,\"reg_base\":%d,\"word_order\":%d,\"fmt\":%d,"
+       "\"poll_ms\":%d},",
        g_cfg.source, port, g_cfg.baud, g_cfg.cards, g_cfg.slave_base,
-       g_cfg.func, g_cfg.reg_base, g_cfg.word_order, g_cfg.fmt);
+       g_cfg.func, g_cfg.reg_base, g_cfg.word_order, g_cfg.fmt, g_cfg.poll_ms);
     AP("\"log\":{\"store_interval\":%d,\"retention_days\":%d},",
        g_cfg.store_interval, g_cfg.retention_days);
     AP("\"net\":{\"tcp_enable\":%d,\"tcp_port\":%d,\"tcp_unit\":%d,\"dhcp\":%d,"
@@ -907,6 +908,7 @@ static void cfg_set(const char *k, const char *v)
     else if (!strcmp(k, "baud"))       g_cfg.baud       = clampi(atoi(v), 1200, 921600);
     else if (!strcmp(k, "port"))       SETSTR(g_cfg.port, v);
     else if (!strcmp(k, "slave_base")) g_cfg.slave_base = clampi(atoi(v), 1, 247);
+    else if (!strcmp(k, "poll_ms"))    g_cfg.poll_ms    = clampi(atoi(v), 50, 2000);
     else if (!strcmp(k, "func"))       g_cfg.func       = clampi(atoi(v), 3, 4);
     else if (!strcmp(k, "reg_base"))   g_cfg.reg_base   = clampi(atoi(v), 0, 65535);
     else if (!strcmp(k, "word_order")) g_cfg.word_order = atoi(v) ? 1 : 0;
@@ -987,7 +989,7 @@ static int is_factory_key(const char *k)
 {
     return !strcmp(k,"source")||!strcmp(k,"cards")||!strcmp(k,"baud")||!strcmp(k,"port")||
            !strcmp(k,"slave_base")||!strcmp(k,"func")||!strcmp(k,"reg_base")||
-           !strcmp(k,"word_order")||!strcmp(k,"fmt")||!strcmp(k,"cfr_enable")||
+           !strcmp(k,"word_order")||!strcmp(k,"fmt")||!strcmp(k,"poll_ms")||!strcmp(k,"cfr_enable")||
            !strcmp(k,"esign_enable")||!strcmp(k,"pin_expiry_days")||!strcmp(k,"manuf_pin");
 }
 
@@ -998,6 +1000,7 @@ static int key_role(const char *k)
     if (!strcmp(k,"source")||!strcmp(k,"cards")||!strcmp(k,"baud")||
         !strcmp(k,"port")||!strcmp(k,"slave_base")||!strcmp(k,"func")||
         !strcmp(k,"reg_base")||!strcmp(k,"word_order")||!strcmp(k,"fmt")||
+        !strcmp(k,"poll_ms")||
         !strcmp(k,"cfr_enable")||!strcmp(k,"esign_enable")||
         !strcmp(k,"pin_expiry_days")||!strncmp(k,"web_",4))
         return ROLE_SUPERADMIN;                               /* factory */

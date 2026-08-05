@@ -138,7 +138,7 @@ static lv_obj_t *btn_cardtab[GROUP_COUNT], *btn_chtab[CH_PER_GROUP];
 static lv_obj_t *row_uzero, *row_uspan, *row_dec;
 static int sel_card, sel_ch;   /* channel setup tab selection */
 static lv_obj_t *dd_src, *ta_port, *dd_baud, *dd_cards, *ta_slave,
-                *ta_regbase, *dd_func, *dd_fmt, *dd_order, *lbl_commres;
+                *ta_regbase, *dd_func, *dd_fmt, *dd_order, *dd_poll, *lbl_commres;
 static lv_obj_t *dd_interval, *dd_retention;
 static lv_obj_t *lbl_usb, *lbl_result;
 /* calibration / service form */
@@ -154,6 +154,7 @@ static lv_obj_t *dd_rfc, *ta_raddr, *dd_rcnt, *lbl_rres;
 static lv_obj_t *ta_waddr, *ta_wval, *sw_arm, *lbl_wres;
 
 static const int baud_vals[]     = { 9600, 19200, 38400, 57600, 115200 };
+static const int poll_vals[]     = { 100, 150, 200, 250, 500, 1000 };
 /* store intervals: 1 minute minimum, samples land on clock boundaries */
 static const int interval_vals[] = { 60, 300, 600, 900, 1800, 3600 };
 
@@ -747,6 +748,7 @@ static void comm_save_cb(lv_event_t *e)
     g_cfg.reg_base   = atoi(lv_textarea_get_text(ta_regbase));
     g_cfg.fmt        = (int)lv_dropdown_get_selected(dd_fmt);
     g_cfg.word_order = (int)lv_dropdown_get_selected(dd_order);
+    g_cfg.poll_ms    = poll_vals[lv_dropdown_get_selected(dd_poll)];
 
     /* baud change: reprogram all fitted cards, then follow with our
      * own port - one action changes the whole bus */
@@ -808,6 +810,12 @@ static void build_comm_form(void)
                        g_cfg.fmt);
     dd_order = form_dd(form_row("Float word order"),
                        "CDAB (word swap)\nABCD", g_cfg.word_order);
+    int psel = 2;   /* default 200 ms */
+    for (int i = 0; i < (int)(sizeof(poll_vals)/sizeof(poll_vals[0])); i++)
+        if (poll_vals[i] == g_cfg.poll_ms) psel = i;
+    dd_poll  = form_dd(form_row("Refresh rate"),
+                       "100 ms (fastest)\n150 ms\n200 ms\n250 ms\n500 ms\n1 second",
+                       psel);
     page_save_button(LV_SYMBOL_SAVE "  Save", comm_save_cb);
 
     lbl_commres = lv_label_create(panel);

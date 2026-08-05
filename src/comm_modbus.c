@@ -19,6 +19,7 @@
 typedef HANDLE serial_t;
 #define SERIAL_BAD INVALID_HANDLE_VALUE
 static void msleep(int ms) { Sleep(ms); }
+static uint32_t now_ms(void) { return (uint32_t)GetTickCount(); }
 
 static serial_t serial_open(const char *port, int baud)
 {
@@ -62,9 +63,16 @@ static void serial_close(serial_t h) { CloseHandle(h); }
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <time.h>
 typedef int serial_t;
 #define SERIAL_BAD (-1)
 static void msleep(int ms) { usleep(ms * 1000); }
+static uint32_t now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
 
 static serial_t serial_open(const char *port, int baud)
 {
@@ -398,6 +406,8 @@ void *comm_modbus_thread(void *arg)
         float scale = (g_cfg.fmt == FMT_I16_10)  ? 10.0f :
                       (g_cfg.fmt == FMT_I16_100) ? 100.0f : 1.0f;
 
+        uint32_t cycle_start = now_ms();
+
         for (int card = 0; card < g_cfg.cards; card++) {
             uint16_t regs[16];
             int slave = g_cfg.slave_base + card;
@@ -444,9 +454,18 @@ void *comm_modbus_thread(void *arg)
             data_unlock();
             if (ok) any_ok = 1;
 
-            /* pace one card poll per (1000/cards) ms so every card
-             * refreshes once each ~1 s (5 cards -> 200 ms apart) */
-            msleep(1000 / (g_cfg.cards > 0 ? g_cfg.cards : 1));
+            /* short silent gap between frames for RS-485 bus turnaround
+             * (Modbus needs >= 3.5 char times); keeps cards from colliding */
+            if (card < g_cfg.cards - 1) msleep(3);
+        }
+
+        /* pace the WHOLE scan to poll_ms (default 200 ms) so every card
+         * refreshes ~5x/s, instead of the old fixed ~1 s cycle. If the bus
+         * transactions already took longer, poll again immediately. */
+        {
+            int target  = g_cfg.poll_ms > 0 ? g_cfg.poll_ms : 200;
+            uint32_t el = now_ms() - cycle_start;
+            if ((int)el < target) msleep(target - (int)el);
         }
 
         /* log link transitions to the event trail */
@@ -467,9 +486,15 @@ void *comm_modbus_thread(void *arg)
             pthread_mutex_unlock(&bus_mtx);
         }
 
-        alarm_eval();
-        data_live_push();
-        /* full sweep is already paced to ~1 s by the per-card gap above */
+        alarm_eval();   /* runs every scan so alarms react at the poll rate */
+
+        /* the live ring is one sample per second (1 h history); push at 1 Hz
+         * even though the bus now scans several times a second */
+        {
+            static uint32_t last_push = 0;
+            uint32_t t = now_ms();
+            if (t - last_push >= 1000) { last_push = t; data_live_push(); }
+        }
     }
     return NULL;
 }

@@ -40,6 +40,7 @@ typedef struct {
     int  reg_base;        /* first register of channel data */
     int  word_order;      /* float only: 0 = CDAB, 1 = ABCD */
     int  fmt;             /* val_fmt_t */
+    int  poll_ms;         /* target time for one full scan of all cards (ms) */
     int  store_interval;  /* logging interval, seconds */
     int  retention_days;  /* keep logs this many days (0 = keep until disk-full) */
     char brand[40];       /* company / product name shown to the customer */

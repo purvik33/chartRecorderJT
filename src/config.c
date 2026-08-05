@@ -30,6 +30,7 @@ static void set_defaults(void)
     g_cfg.reg_base       = 0;
     g_cfg.word_order     = 0;
     g_cfg.fmt            = FMT_I16_10;
+    g_cfg.poll_ms        = 200;
     g_cfg.store_interval = 5;
     g_cfg.retention_days = 1825;   /* keep 5 years by default */
     strcpy(g_cfg.brand, "JETPACE");
@@ -121,6 +122,7 @@ void config_load(void)
             else if (!strcmp(key, "reg_base"))       g_cfg.reg_base = atoi(val);
             else if (!strcmp(key, "word_order"))     g_cfg.word_order = atoi(val);
             else if (!strcmp(key, "fmt"))            g_cfg.fmt = atoi(val);
+            else if (!strcmp(key, "poll_ms"))        g_cfg.poll_ms = atoi(val);
             else if (!strcmp(key, "store_interval")) g_cfg.store_interval = atoi(val);
             else if (!strcmp(key, "retention_days")) g_cfg.retention_days = atoi(val);
             else if (!strcmp(key, "brand"))          { strncpy(g_cfg.brand, val, sizeof(g_cfg.brand)-1); g_cfg.brand[sizeof(g_cfg.brand)-1] = 0; }
@@ -199,6 +201,10 @@ void config_load(void)
 
     if (g_cfg.word_order != 0 && g_cfg.word_order != 1) g_cfg.word_order = 0;
 
+    if (g_cfg.poll_ms <= 0) g_cfg.poll_ms = 200;   /* older config had no key */
+    if (g_cfg.poll_ms < 50)   g_cfg.poll_ms = 50;
+    if (g_cfg.poll_ms > 2000) g_cfg.poll_ms = 2000;
+
     if (g_cfg.tcp_port < 1 || g_cfg.tcp_port > 65535) g_cfg.tcp_port = 502;
     if (g_cfg.web_port < 1 || g_cfg.web_port > 65535) g_cfg.web_port = 8080;
 
@@ -249,6 +255,7 @@ void config_save(void)
     fprintf(f, "reg_base=%d\n",   g_cfg.reg_base);
     fprintf(f, "word_order=%d\n", g_cfg.word_order);
     fprintf(f, "fmt=%d\n",        g_cfg.fmt);
+    fprintf(f, "poll_ms=%d\n",    g_cfg.poll_ms);
     fprintf(f, "\n[logging]\n");
     fprintf(f, "store_interval=%d\n", g_cfg.store_interval);
     fprintf(f, "retention_days=%d\n", g_cfg.retention_days);
