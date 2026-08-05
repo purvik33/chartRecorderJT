@@ -42,8 +42,11 @@ static void pop_fill(void)
 
     if (snap.status == CH_OK || snap.status == CH_ALM_HI ||
         snap.status == CH_ALM_LO)
-        lv_label_set_text_fmt(pop_val, "%.1f %s", (double)snap.value,
-                              snap.unit);
+    {   char vb[16];
+        lv_label_set_text_fmt(pop_val, "%s %s",
+            disp_str(vb, sizeof vb, (double)snap.value, ch_dec(&snap)),
+            snap.unit);
+    }
     else
         lv_label_set_text(pop_val,
             snap.status == CH_SKIP  ? "SKIP"  :
@@ -91,11 +94,15 @@ static void pop_fill(void)
                     : LV_CHART_POINT_NONE);
     lv_chart_refresh(pop_chart);
 
-    if (vcnt > 0)
+    if (vcnt > 0) {
+        int dc = ch_dec(&snap);
+        char bmn[16], bmx[16], bav[16];
         lv_label_set_text_fmt(pop_stats,
-            "Last 10 min      Min %.1f     Max %.1f     Avg %.1f  %s",
-            (double)vmin, (double)vmax, (double)(vsum / (float)vcnt),
-            snap.unit);
+            "Last 10 min      Min %s     Max %s     Avg %s  %s",
+            disp_str(bmn, sizeof bmn, (double)vmin, dc),
+            disp_str(bmx, sizeof bmx, (double)vmax, dc),
+            disp_str(bav, sizeof bav, (double)(vsum / (float)vcnt), dc), snap.unit);
+    }
     else
         lv_label_set_text(pop_stats, "Last 10 min - no data yet");
 }
@@ -337,7 +344,10 @@ void scr_digital_refresh(void)
             continue;
         }
         lv_label_set_text(t->lbl_unit, c->unit);
-        lv_label_set_text_fmt(t->lbl_value, "%.1f", (double)c->value);
+        {   char vb[16];
+            lv_label_set_text(t->lbl_value,
+                disp_str(vb, sizeof vb, (double)c->value, ch_dec(c)));
+        }
 
         if (c->status == CH_ALM_HI || c->status == CH_ALM_LO) {
             lv_obj_set_style_bg_color(t->tile, COL_ALARM_BG, 0);

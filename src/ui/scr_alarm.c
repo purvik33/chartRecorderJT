@@ -72,7 +72,8 @@ static void fill_current(void)
         lv_table_set_cell_value(table, r, 2, type_txt[e->type]);
 
         if (e->type == ALM_COMM) snprintf(b, sizeof(b), "-");
-        else snprintf(b, sizeof(b), "%.1f", (double)e->value);
+        else disp_str(b, sizeof(b), (double)e->value,
+                      e->ch >= 0 && e->ch < CH_TOTAL ? ch_dec(&g_ch[e->ch]) : 1);
         lv_table_set_cell_value(table, r, 3, b);
 
         fmt_t(e->t_set, b, sizeof(b));
@@ -116,7 +117,12 @@ static void fill_history(void)
         lv_table_set_cell_value(table, r, 2, rec->type);
 
         if (!strcmp(rec->type, "COMM")) snprintf(b, sizeof(b), "-");
-        else snprintf(b, sizeof(b), "%.1f", (double)rec->value);
+        else {
+            int ri = (rec->ch[0] == 'C' && rec->ch[1] == 'H')
+                     ? atoi(rec->ch + 2) - 1 : -1;
+            disp_str(b, sizeof(b), (double)rec->value,
+                     ri >= 0 && ri < CH_TOTAL ? ch_dec(&g_ch[ri]) : 1);
+        }
         lv_table_set_cell_value(table, r, 3, b);
 
         lv_table_set_cell_value(table, r, 4,

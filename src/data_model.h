@@ -38,6 +38,7 @@ typedef struct {
     int         lin;         /* 1 = linear input: scale ADC counts to [lo,hi] */
     float       cnt_lo;      /* ADC count that maps to range low  (user zero) */
     float       cnt_hi;      /* ADC count that maps to range high (user span) */
+    int         decimals;    /* display decimal places (linear inputs only) */
     ch_status_t status;
 } channel_t;
 
@@ -46,6 +47,27 @@ extern channel_t g_ch[CH_TOTAL];
 void data_model_init(void);
 void data_lock(void);
 void data_unlock(void);
+
+/* Round v to `dec` decimals for display and fold negative zero into +0, so a
+ * reading like -0.03 shown at 1 decimal appears as "0.0", never "-0.0". */
+static inline double disp_fix(double v, int dec)
+{
+    double p = 1.0;
+    for (int i = 0; i < dec; i++) p *= 10.0;
+    double r = (v < 0.0 ? -(double)(long long)(-v * p + 0.5)
+                        :  (double)(long long)( v * p + 0.5)) / p;
+    return r == 0.0 ? 0.0 : r;   /* assigning 0.0 yields +0.0 */
+}
+
+/* Display decimal places for a channel: linear inputs use the per-channel
+ * setting; RTD/TC keep the card's fixed 1-decimal presentation. */
+static inline int ch_dec(const channel_t *c)
+{
+    return c->lin ? (c->decimals < 0 ? 0 : c->decimals > 4 ? 4 : c->decimals) : 1;
+}
+
+/* Format v into buf with `dec` decimals, folding -0 into 0. Returns buf. */
+const char *disp_str(char *buf, int n, double v, int dec);
 
 void data_sim_step(void);   /* fake data generator (simulator source) */
 

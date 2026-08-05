@@ -713,11 +713,12 @@ static void api_live(wsock_t s)
         o += snprintf(body + o, sizeof(body) - (size_t)o,
                       "%s{\"n\":%d,\"tag\":\"%s\",\"unit\":\"%s\","
                       "\"value\":%.3f,\"status\":\"%s\","
-                      "\"lo\":%g,\"hi\":%g,\"rlo\":%g,\"rhi\":%g}",
+                      "\"lo\":%g,\"hi\":%g,\"rlo\":%g,\"rhi\":%g,\"dec\":%d}",
                       i ? "," : "", i + 1, tag, unit,
                       (double)g_ch[i].value, st_txt(g_ch[i].status),
                       (double)g_ch[i].alm_lo, (double)g_ch[i].alm_hi,
-                      (double)g_ch[i].lo, (double)g_ch[i].hi);
+                      (double)g_ch[i].lo, (double)g_ch[i].hi,
+                      g_ch[i].lin ? g_ch[i].decimals : 1);
     }
     data_unlock();
     o += snprintf(body + o, sizeof(body) - (size_t)o, "]}");
@@ -879,11 +880,13 @@ static void api_config_get(wsock_t s, const char *req)
         jesc(tg, sizeof(tg), g_ch[i].tag);
         jesc(un, sizeof(un), g_ch[i].unit);
         AP("%s{\"n\":%d,\"tag\":\"%s\",\"unit\":\"%s\",\"lo\":%g,\"hi\":%g,"
-           "\"almhi\":%g,\"almlo\":%g,\"lin\":%d,\"cntlo\":%g,\"cnthi\":%g}",
+           "\"almhi\":%g,\"almlo\":%g,\"lin\":%d,\"cntlo\":%g,\"cnthi\":%g,"
+           "\"dec\":%d}",
            i ? "," : "", i + 1, tg, un,
            (double)g_ch[i].lo, (double)g_ch[i].hi,
            (double)g_ch[i].alm_hi, (double)g_ch[i].alm_lo,
-           g_ch[i].lin, (double)g_ch[i].cnt_lo, (double)g_ch[i].cnt_hi);
+           g_ch[i].lin, (double)g_ch[i].cnt_lo, (double)g_ch[i].cnt_hi,
+           g_ch[i].decimals);
     }
     data_unlock();
     AP("]}");
@@ -973,6 +976,7 @@ static void cfg_set(const char *k, const char *v)
             else if (!strcmp(f, "lin"))   c->lin    = atoi(v);
             else if (!strcmp(f, "cntlo")) c->cnt_lo = (float)atof(v);
             else if (!strcmp(f, "cnthi")) c->cnt_hi = (float)atof(v);
+            else if (!strcmp(f, "dec"))   c->decimals = atoi(v);
             data_unlock();
         }
     }

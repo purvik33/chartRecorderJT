@@ -222,10 +222,14 @@ static void load_day(void)
             n++;
         }
         if (n > 0) {
-            lv_label_set_text_fmt(lbl_pavg[c], "%.1f %s",
-                (double)(sum / (float)n), g_ch[base + c].unit);
-            lv_label_set_text_fmt(lbl_pmm[c], "Min %.1f  Max %.1f",
-                (double)mn, (double)mx);
+            int dc = ch_dec(&g_ch[base + c]);
+            char bav[16], bmn[16], bmx[16];
+            lv_label_set_text_fmt(lbl_pavg[c], "%s %s",
+                disp_str(bav, sizeof bav, (double)(sum / (float)n), dc),
+                g_ch[base + c].unit);
+            lv_label_set_text_fmt(lbl_pmm[c], "Min %s  Max %s",
+                disp_str(bmn, sizeof bmn, (double)mn, dc),
+                disp_str(bmx, sizeof bmx, (double)mx, dc));
         } else {
             lv_label_set_text(lbl_pavg[c], "no data");
             lv_label_set_text(lbl_pmm[c], "");

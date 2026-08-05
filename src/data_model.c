@@ -11,6 +11,14 @@ static pthread_mutex_t data_mtx = PTHREAD_MUTEX_INITIALIZER;
 void data_lock(void)   { pthread_mutex_lock(&data_mtx); }
 void data_unlock(void) { pthread_mutex_unlock(&data_mtx); }
 
+const char *disp_str(char *buf, int n, double v, int dec)
+{
+    if (dec < 0) dec = 0;
+    if (dec > 4) dec = 4;
+    snprintf(buf, (size_t)n, "%.*f", dec, disp_fix(v, dec));
+    return buf;
+}
+
 /* ---- live one-second ring ---- */
 static float  lv_val[CH_TOTAL][LIVE_SECS];
 static uint8_t lv_ok[CH_TOTAL][LIVE_SECS];
@@ -123,6 +131,7 @@ void data_model_init(void)
         c->lin    = (strchr(p->sensor, 'A') || strchr(p->sensor, 'V')) ? 1 : 0;
         c->cnt_lo = -2000.0f;   /* ADC count at range low  (user zero) */
         c->cnt_hi = 20000.0f;   /* ADC count at range high (user span) */
+        c->decimals = 1;        /* display decimals for linear inputs */
         c->status = CH_OK;
 
         phase[i] = (float)(i / CH_PER_GROUP) * 0.7f + (float)(i % CH_PER_GROUP) * 1.3f;

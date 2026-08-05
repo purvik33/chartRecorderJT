@@ -133,9 +133,9 @@ static void show_net_list(void);
 
 /* form field handles */
 static lv_obj_t *dd_itype, *sw_chon, *ta_tag, *ta_unit, *ta_lo, *ta_hi,
-                *ta_ahi, *ta_alo, *ta_uzero, *ta_uspan, *lbl_chres;
+                *ta_ahi, *ta_alo, *ta_uzero, *ta_uspan, *dd_dec, *lbl_chres;
 static lv_obj_t *btn_cardtab[GROUP_COUNT], *btn_chtab[CH_PER_GROUP];
-static lv_obj_t *row_uzero, *row_uspan;
+static lv_obj_t *row_uzero, *row_uspan, *row_dec;
 static int sel_card, sel_ch;   /* channel setup tab selection */
 static lv_obj_t *dd_src, *ta_port, *dd_baud, *dd_cards, *ta_slave,
                 *ta_regbase, *dd_func, *dd_fmt, *dd_order, *lbl_commres;
@@ -373,9 +373,11 @@ static void chform_update_visibility(void)
     if (t >= 12 && t <= 19) {
         lv_obj_remove_flag(row_uzero, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(row_uspan, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(row_dec,   LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(row_uzero, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(row_uspan, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(row_dec,   LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -390,6 +392,9 @@ static void channel_form_load(int ch)
     ta_set_float(ta_hi,  c->hi);
     ta_set_float(ta_ahi, c->alm_hi);
     ta_set_float(ta_alo, c->alm_lo);
+    {   int d = c->decimals; if (d < 0) d = 0; if (d > 4) d = 4;
+        lv_dropdown_set_selected(dd_dec, (uint32_t)d);
+    }
     data_unlock();
 
     /* current input type and scaling come from the card itself */
@@ -461,6 +466,7 @@ static void ch_save_cb(lv_event_t *e)
         if (c->lin) {
             c->cnt_lo = (float)atof(lv_textarea_get_text(ta_uzero));
             c->cnt_hi = (float)atof(lv_textarea_get_text(ta_uspan));
+            c->decimals = (int)lv_dropdown_get_selected(dd_dec);
         }
     }
     data_unlock();
@@ -696,6 +702,20 @@ static void build_channel_form(void)
     ta_uspan  = form_ta(row_uspan, NULL);
     ta_numeric(ta_uzero);
     ta_numeric(ta_uspan);
+
+    /* display decimals - linear inputs only (RTD/TC use the card calc) */
+    row_dec = form_row("Decimal places");
+    dd_dec  = lv_dropdown_create(row_dec);
+    lv_dropdown_set_options(dd_dec, "0\n1\n2\n3\n4");
+    lv_dropdown_set_selected(dd_dec, 1);
+    lv_obj_set_size(dd_dec, 120, 42);
+    lv_obj_align(dd_dec, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_color(dd_dec, COL_BG, 0);
+    lv_obj_set_style_text_color(dd_dec, COL_TEXT, 0);
+    lv_obj_set_style_border_color(dd_dec, COL_BORDER, 0);
+    lv_obj_set_style_bg_color(lv_dropdown_get_list(dd_dec), COL_PANEL, 0);
+    lv_obj_set_style_text_color(lv_dropdown_get_list(dd_dec), COL_TEXT, 0);
+    lv_obj_add_event_cb(dd_dec, dd_dirty_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     page_save_button(LV_SYMBOL_SAVE "  Save channel", ch_save_cb);
 

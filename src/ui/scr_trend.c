@@ -83,12 +83,15 @@ static void values_update(void)
         data_lock();
         char unit[8];
         lv_snprintf(unit, sizeof(unit), "%s", g_ch[base + c].unit);
+        int dc = ch_dec(&g_ch[base + c]);
         data_unlock();
         if (n > 0) {
-            lv_label_set_text_fmt(vavg[c], "%.1f %s",
-                                  (double)(sum / (float)n), unit);
-            lv_label_set_text_fmt(vmm[c], "Min %.1f  Max %.1f",
-                                  (double)mn, (double)mx);
+            char bav[16], bmn[16], bmx[16];
+            lv_label_set_text_fmt(vavg[c], "%s %s",
+                disp_str(bav, sizeof bav, (double)(sum / (float)n), dc), unit);
+            lv_label_set_text_fmt(vmm[c], "Min %s  Max %s",
+                disp_str(bmn, sizeof bmn, (double)mn, dc),
+                disp_str(bmx, sizeof bmx, (double)mx, dc));
         } else {
             lv_label_set_text(vavg[c], "no data");
             lv_label_set_text(vmm[c], "");
@@ -351,11 +354,14 @@ static void chart_event_cb(lv_event_t *e)
 
     if (best >= 0) {
         data_lock();
-        lv_label_set_text_fmt(lbl_read, "%s  %02d:%02d:%02d   %.1f %s",
-                              g_ch[ui_group() * CH_PER_GROUP + best].tag,
+        channel_t *bc = &g_ch[ui_group() * CH_PER_GROUP + best];
+        char vb[16];
+        lv_label_set_text_fmt(lbl_read, "%s  %02d:%02d:%02d   %s %s",
+                              bc->tag,
                               sec / 3600, (sec % 3600) / 60, sec % 60,
-                              (double)disp_eng[best][id],
-                              g_ch[ui_group() * CH_PER_GROUP + best].unit);
+                              disp_str(vb, sizeof vb, (double)disp_eng[best][id],
+                                       ch_dec(bc)),
+                              bc->unit);
         data_unlock();
     } else {
         lv_label_set_text_fmt(lbl_read, "%02d:%02d:%02d",

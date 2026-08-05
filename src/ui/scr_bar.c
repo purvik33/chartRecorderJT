@@ -196,7 +196,10 @@ void scr_bar_refresh(void)
             lv_label_set_text(c->unit, "");
             lv_obj_set_style_border_color(c->track, COL_BORDER, 0);
         } else {
-            lv_label_set_text_fmt(c->val, "%.1f", (double)snap.value);
+            {   char vb[16];
+                lv_label_set_text(c->val,
+                    disp_str(vb, sizeof vb, (double)snap.value, ch_dec(&snap)));
+            }
             lv_obj_set_style_text_font(c->val, &lv_font_montserrat_24, 0);
             lv_obj_set_style_text_color(c->val,
                                         alm ? COL_ALARM_TXT : chcol, 0);

@@ -110,6 +110,7 @@ void config_load(void)
             else if (!strcmp(key, "lin"))    c->lin    = atoi(val);
             else if (!strcmp(key, "cnt_lo")) c->cnt_lo = (float)atof(val);
             else if (!strcmp(key, "cnt_hi")) c->cnt_hi = (float)atof(val);
+            else if (!strcmp(key, "dec"))    c->decimals = atoi(val);
         } else {
             if      (!strcmp(key, "source"))         g_cfg.source = atoi(val);
             else if (!strcmp(key, "port"))           { strncpy(g_cfg.port, val, sizeof(g_cfg.port)-1); g_cfg.port[sizeof(g_cfg.port)-1] = 0; }
@@ -322,8 +323,8 @@ void config_save(void)
         fprintf(f, "tag=%s\nunit=%s\nlo=%g\nhi=%g\nalm_hi=%g\nalm_lo=%g\n",
                 c->tag, c->unit, (double)c->lo, (double)c->hi,
                 (double)c->alm_hi, (double)c->alm_lo);
-        fprintf(f, "lin=%d\ncnt_lo=%g\ncnt_hi=%g\n",
-                c->lin, (double)c->cnt_lo, (double)c->cnt_hi);
+        fprintf(f, "lin=%d\ncnt_lo=%g\ncnt_hi=%g\ndec=%d\n",
+                c->lin, (double)c->cnt_lo, (double)c->cnt_hi, c->decimals);
     }
     data_unlock();
 
