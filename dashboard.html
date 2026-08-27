@@ -28,8 +28,9 @@ button{font-family:inherit}
 header{grid-area:hdr;display:flex;align-items:center;gap:16px;
   padding:0 20px;height:60px;background:var(--card);
   border-bottom:1px solid var(--line);position:relative;z-index:20;}
-.brand{font-size:19px;letter-spacing:1px;font-weight:600;white-space:nowrap;}
-.brand span{color:var(--acc);font-weight:500}
+.brand{font-size:19px;letter-spacing:1px;font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:11px}
+.brand-logo{height:26px;width:auto;display:block}
+.brand span{color:var(--acc);font-weight:500;font-size:15px}
 .hdr-grp{color:var(--mut);font-size:13px;padding-left:16px;
   border-left:1px solid var(--line);white-space:nowrap;}
 .hdr-grp b{color:var(--ink);font-weight:600}
@@ -372,7 +373,7 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 <div id="app">
   <header>
     <button class="hamb" id="hamb" aria-label="Menu">&#9776;</button>
-    <div class="brand">JETPACE <span>&mdash; PR-40 Recorder</span></div>
+    <div class="brand"><img src="/logo-white.png" alt="JETPACE" class="brand-logo"><span>PR-40 Recorder</span></div>
     <div class="hdr-grp" id="hdr-grp">Group &middot; CH</div>
     <div class="hdr-right">
       <span class="pill" id="p-link"><span class="dot"></span>&mdash;</span>
@@ -1557,12 +1558,13 @@ async function downloadPDF(){
     `${_p(_n.getHours())}${_p(_n.getMinutes())}${_p(_n.getSeconds())}`;
   let tz="";try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||"";}catch(e){}
   const grp=(LIVE?("Group "+LIVE.grp):"");
-  const logo=`<svg width="46" height="46" viewBox="0 0 46 46"><rect x="1" y="1" width="44" height="44" rx="10" fill="#0d1b2a"/><path d="M8 31 L17 20 L23 26 L31 12 L39 21" fill="none" stroke="#4fc3f7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="31" cy="12" r="2.6" fill="#4fc3f7"/></svg>`;
+  const logo=`<img class="hdrlogo" src="${location.origin}/logo-red.png" alt="JETPACE">`;
   const html=`<!doctype html><html><head><meta charset="utf-8">`+
     `<title>PR-40 Data ${from}${from!==to?"_to_"+to:""}</title><style>`+
     `@page{size:A4 portrait;margin:12mm 12mm 16mm}@page land{size:A4 landscape;margin:10mm}`+
     `*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0}`+
     `.lh{display:flex;align-items:center;gap:14px}`+
+    `.hdrlogo{height:34px;width:auto}`+
     `.lh-name{font-size:20px;color:#0d1b2a;font-weight:700}.lh-name b{color:#2a7ab0}`+
     `.lh-prod{font-size:11px;color:#666}`+
     `.lh-rt{margin-left:auto;text-align:right}`+
@@ -1599,7 +1601,7 @@ async function downloadPDF(){
     `margin-top:12px;line-height:1.5}.stmt b{color:#0d1b2a}`+
     `</style></head><body>`+
     `<div class="noprint"><button class="pb" onclick="window.print()">Save as PDF / Print</button></div>`+
-    `<div class="lh">${logo}<div><div class="lh-name">JETPACE <b>Technologies</b></div>`+
+    `<div class="lh">${logo}<div><div class="lh-name"><b>Technologies</b></div>`+
     `<div class="lh-prod">PR-40 Paperless Recorder</div></div>`+
     `<div class="lh-rt"><div class="lh-title">DATA REPORT</div>`+
     `<div class="lh-meta">${from} to ${to}</div></div></div>`+

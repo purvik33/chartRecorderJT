@@ -76,12 +76,14 @@ void ui_ch_visible_toggle(int pos);
 
 /* brand lockup: "JETPACE" drawn as text plus the bolt emblem image.
  * Red on light themes, white on dark themes. */
-LV_IMAGE_DECLARE(img_bolt_sm_red);
-LV_IMAGE_DECLARE(img_bolt_sm_wht);
-LV_IMAGE_DECLARE(img_bolt_lg_red);
-LV_IMAGE_DECLARE(img_bolt_lg_wht);
-const lv_image_dsc_t *ui_bolt_sm(void);
-const lv_image_dsc_t *ui_bolt_lg(void);
+/* full JETPACE wordmark logo - red for light themes, white for dark.
+ * bar = top-bar size (168x36), lg = splash size (448x96) */
+LV_IMAGE_DECLARE(img_logo_bar_red);
+LV_IMAGE_DECLARE(img_logo_bar_wht);
+LV_IMAGE_DECLARE(img_logo_lg_red);
+LV_IMAGE_DECLARE(img_logo_lg_wht);
+const lv_image_dsc_t *ui_logo_bar(void);
+const lv_image_dsc_t *ui_logo_lg(void);
 lv_color_t ui_brand_color(void);
 
 /* Each view implements: build into parent, and optional 500 ms refresh */

@@ -10,3 +10,14 @@ recorder_ui.update
 # editor leftovers
 *.swp
 .vscode/
+
+# internal hardware design docs — never publish
+cm4_peripherals.html
+dsi_display.html
+full_system.html
+mb_card.html
+smps_preview.html
+
+# local generated reports
+Datalogger Reports/
+*.pdf

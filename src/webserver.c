@@ -661,6 +661,26 @@ static void send_file(wsock_t s, const char *path)
     fclose(f);
 }
 
+/* serve the brand logo PNG from disk (image/png). Reachable without a
+ * session so the sign-in page can show it too. */
+static void serve_logo(wsock_t s, const char *path)
+{
+    const char *file = !strcmp(path, "/logo-red.png") ? "logo-red.png"
+                                                       : "logo-white.png";
+    FILE *f = fopen(file, "rb");
+    if (!f) { http_404(s); return; }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz <= 0 || sz > 400000) { fclose(f); http_404(s); return; }
+    char *buf = malloc((size_t)sz);
+    if (!buf) { fclose(f); http_404(s); return; }
+    size_t rd = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    http_send(s, "200 OK", "image/png", buf, rd);
+    free(buf);
+}
+
 /* ---- API handlers ------------------------------------------------------ */
 
 static const char *st_txt(ch_status_t st)
@@ -1203,6 +1223,7 @@ static const char LOGIN_HTML[] =
 "transparent 60%)}"
 ".blogo{font-size:42px;font-weight:800;letter-spacing:3px;z-index:1}"
 ".blogo span{color:var(--acc)}"
+".blogo-img{height:56px;width:auto;z-index:1;align-self:flex-start}"
 ".bsub{font-size:19px;color:#cfe3f2;font-weight:500;letter-spacing:.5px;z-index:1}"
 ".btag{font-size:14px;color:var(--mut);max-width:430px;line-height:1.6;z-index:1}"
 ".chart{position:relative;z-index:1;width:100%;max-width:470px;height:160px;"
@@ -1245,8 +1266,8 @@ static const char LOGIN_HTML[] =
 "@media(max-width:820px){.brand{display:none}.login{flex:1}}"
 "</style></head><body><div class='split'>"
 "<div class='brand'>"
-"<div class='blogo'>JETPACE <span>PR-40</span></div>"
-"<div class='bsub'>Paperless Recorder</div>"
+"<img class='blogo-img' alt='JETPACE' src='/logo-white.png'>"
+"<div class='bsub'>PR-40 &middot; Paperless Recorder</div>"
 "<div class='btag'>40-channel data acquisition &middot; trend, bar &amp; "
 "polar views &middot; 21 CFR Part 11 audit trail.</div>"
 "<div class='chart'><svg viewBox='0 0 470 160' preserveAspectRatio='none'>"
@@ -1364,6 +1385,13 @@ static void handle_client(wsock_t c)
     /* the login endpoint is always reachable - it is how you get a session */
     if (!strcmp(path, "/api/login")) {
         api_login(c, req);
+        served++; wsock_close(c);
+        return;
+    }
+
+    /* brand logo is public so the sign-in page can display it */
+    if (!strcmp(path, "/logo-white.png") || !strcmp(path, "/logo-red.png")) {
+        serve_logo(c, path);
         served++; wsock_close(c);
         return;
     }

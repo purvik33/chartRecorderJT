@@ -60,14 +60,15 @@ static int theme_is_dark(void)
     return lum < 128;
 }
 
-const lv_image_dsc_t *ui_bolt_sm(void)
+/* full JETPACE wordmark: white knockout on dark themes, brand red on light */
+const lv_image_dsc_t *ui_logo_bar(void)
 {
-    return theme_is_dark() ? &img_bolt_sm_wht : &img_bolt_sm_red;
+    return theme_is_dark() ? &img_logo_bar_wht : &img_logo_bar_red;
 }
 
-const lv_image_dsc_t *ui_bolt_lg(void)
+const lv_image_dsc_t *ui_logo_lg(void)
 {
-    return theme_is_dark() ? &img_bolt_lg_wht : &img_bolt_lg_red;
+    return theme_is_dark() ? &img_logo_lg_wht : &img_logo_lg_red;
 }
 
 lv_color_t ui_brand_color(void)
@@ -601,17 +602,10 @@ static void build_root(void)
     lv_obj_set_style_border_width(bar, 1, 0);
     lv_obj_set_style_border_color(bar, COL_BORDER, 0);
 
-    /* brand lockup: JETPACE text + bolt emblem, always top-left */
-    lv_obj_t *wordmark = lv_label_create(bar);
-    lv_label_set_text(wordmark, "JETPACE");
-    lv_obj_set_style_text_font(wordmark, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(wordmark, ui_brand_color(), 0);
-    lv_obj_set_style_text_letter_space(wordmark, 1, 0);
-    lv_obj_align(wordmark, LV_ALIGN_LEFT_MID, 10, 1);
-
+    /* brand lockup: full JETPACE wordmark image, always top-left */
     lv_obj_t *logo = lv_image_create(bar);
-    lv_image_set_src(logo, ui_bolt_sm());
-    lv_obj_align_to(logo, wordmark, LV_ALIGN_OUT_RIGHT_MID, 3, -7);
+    lv_image_set_src(logo, ui_logo_bar());
+    lv_obj_align(logo, LV_ALIGN_LEFT_MID, 10, 0);
 
     lv_obj_t *btn_prev = lv_button_create(bar);
     lv_obj_set_size(btn_prev, 36, 30);
@@ -773,16 +767,9 @@ void ui_init(void)
 
     splash_scene(splash);   /* animated plant under the brand */
 
-    lv_obj_t *bw = lv_label_create(splash);
-    lv_label_set_text(bw, "JETPACE");
-    lv_obj_set_style_text_font(bw, &lv_font_montserrat_40, 0);
-    lv_obj_set_style_text_color(bw, ui_brand_color(), 0);
-    lv_obj_set_style_text_letter_space(bw, 2, 0);
-    lv_obj_align(bw, LV_ALIGN_CENTER, -48, -34);
-
-    lv_obj_t *bl = lv_image_create(splash);
-    lv_image_set_src(bl, ui_bolt_lg());
-    lv_obj_align_to(bl, bw, LV_ALIGN_OUT_RIGHT_MID, 6, -12);
+    lv_obj_t *bw = lv_image_create(splash);
+    lv_image_set_src(bw, ui_logo_lg());
+    lv_obj_align(bw, LV_ALIGN_CENTER, 0, -34);
 
     lv_obj_t *ml = lv_label_create(splash);
     lv_label_set_text(ml, g_cfg.model);
