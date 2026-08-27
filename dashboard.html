@@ -1104,9 +1104,13 @@ async function loadCfg(force){
   renderCfg();
 }
 function rInput(lbl,desc,id,val,type){
+  /* number inputs default to step=1, which makes decimals like -0.5 "invalid"
+     and some browsers snap them to the nearest whole number on reload -
+     step="any" keeps decimals (offset, ranges, setpoints) exactly as entered */
+  const st=(type==="number")?' step="any"':"";
   return `<div class="row2"><div class="rinfo"><div class="rlbl">${lbl}</div>`+
     (desc?`<div class="rdesc">${cesc(desc)}</div>`:"")+`</div>`+
-    `<div class="rctl"><input id="${id}"${type?` type="${type}"`:""} value="${cesc(val)}"></div></div>`;
+    `<div class="rctl"><input id="${id}"${type?` type="${type}"`:""}${st} value="${cesc(val)}"></div></div>`;
 }
 function rSelect(lbl,desc,id,val,opts){
   return `<div class="row2"><div class="rinfo"><div class="rlbl">${lbl}</div>`+
