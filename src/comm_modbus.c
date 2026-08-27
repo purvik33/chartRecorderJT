@@ -446,6 +446,7 @@ void *comm_modbus_thread(void *arg)
                 } else {
                     ch->value = cnt / (ch->div > 0 ? ch->div : scale);
                 }
+                ch->value += ch->offset;   /* calibration offset (PV trim) */
                 if (ch->status == CH_COMM || ch->status == CH_OPEN ||
                     ch->status == CH_SKIP || ch->status == CH_UNDER ||
                     ch->status == CH_OVER)

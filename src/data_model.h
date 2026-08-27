@@ -38,6 +38,7 @@ typedef struct {
     int         lin;         /* 1 = linear input: scale ADC counts to [lo,hi] */
     float       cnt_lo;      /* ADC count that maps to range low  (user zero) */
     float       cnt_hi;      /* ADC count that maps to range high (user span) */
+    float       offset;      /* calibration offset added to the process value */
     int         decimals;    /* display decimal places (linear inputs only) */
     ch_status_t status;
 } channel_t;

@@ -1209,6 +1209,7 @@ function renderCfg(){
       rInput("Range high","Top of the measuring range","f_hi",c.hi,"number")+
       rInput("Alarm high","High alarm setpoint","f_almhi",c.almhi,"number")+
       rInput("Alarm low","Low alarm setpoint","f_almlo",c.almlo,"number")+
+      rInput("Offset","Added to the reading to trim it (e.g. +0.5 shows 49.5 as 50)","f_off",c.offset,"number")+
       rSelect("Signal type","RTD / thermocouple values arrive calculated; linear inputs (mA, V, mV) arrive as raw counts and are scaled to the range","f_lin",c.lin,[[0,"Direct (RTD / thermocouple)"],[1,"Linear (scale ADC counts)"]])+
       rInput("ADC count at range low","Card count that reads as Range low (linear only)","f_cntlo",c.cntlo,"number")+
       rInput("ADC count at range high","Card count that reads as Range high (linear only)","f_cnthi",c.cnthi,"number")+
@@ -1362,6 +1363,7 @@ async function saveCfg(){
     add("ch"+i+"_tag",$("f_tag").value);add("ch"+i+"_unit",$("f_unit").value);
     add("ch"+i+"_lo",$("f_lo").value);add("ch"+i+"_hi",$("f_hi").value);
     add("ch"+i+"_almhi",$("f_almhi").value);add("ch"+i+"_almlo",$("f_almlo").value);
+    add("ch"+i+"_offset",$("f_off").value);
     add("ch"+i+"_lin",$("f_lin").value);add("ch"+i+"_cntlo",$("f_cntlo").value);add("ch"+i+"_cnthi",$("f_cnthi").value);add("ch"+i+"_dec",$("f_dec").value);
   }else if(cfgGroup=="logging"){add("store_interval",$("f_si").value);add("retention_days",$("f_ret").value);}
   else if(cfgGroup=="factory"){const tg=id=>$(id).classList.contains("on")?1:0;add("source",$("f_src").value);add("cards",$("f_cards").value);add("baud",$("f_baud").value);add("port",$("f_port").value);add("slave_base",$("f_slave").value);if($("f_poll"))add("poll_ms",$("f_poll").value);add("cfr_enable",tg("f_cfr"));add("esign_enable",tg("f_esign"));add("pin_expiry_days",$("f_expiry").value);if($("f_manuf")&&$("f_manuf").value)add("manuf_pin",$("f_manuf").value);}

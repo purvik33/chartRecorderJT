@@ -133,7 +133,7 @@ static void show_net_list(void);
 
 /* form field handles */
 static lv_obj_t *dd_itype, *sw_chon, *ta_tag, *ta_unit, *ta_lo, *ta_hi,
-                *ta_ahi, *ta_alo, *ta_uzero, *ta_uspan, *dd_dec, *lbl_chres;
+                *ta_ahi, *ta_alo, *ta_offset, *ta_uzero, *ta_uspan, *dd_dec, *lbl_chres;
 static lv_obj_t *btn_cardtab[GROUP_COUNT], *btn_chtab[CH_PER_GROUP];
 static lv_obj_t *row_uzero, *row_uspan, *row_dec;
 static int sel_card, sel_ch;   /* channel setup tab selection */
@@ -393,6 +393,7 @@ static void channel_form_load(int ch)
     ta_set_float(ta_hi,  c->hi);
     ta_set_float(ta_ahi, c->alm_hi);
     ta_set_float(ta_alo, c->alm_lo);
+    ta_set_float(ta_offset, c->offset);
     {   int d = c->decimals; if (d < 0) d = 0; if (d > 4) d = 4;
         lv_dropdown_set_selected(dd_dec, (uint32_t)d);
     }
@@ -458,6 +459,7 @@ static void ch_save_cb(lv_event_t *e)
     c->hi     = (float)atof(lv_textarea_get_text(ta_hi));
     c->alm_hi = (float)atof(lv_textarea_get_text(ta_ahi));
     c->alm_lo = (float)atof(lv_textarea_get_text(ta_alo));
+    c->offset = (float)atof(lv_textarea_get_text(ta_offset));
     /* linear input types (12-19) are scaled from ADC counts to [lo,hi] by
      * the recorder; the user zero/span are the count endpoints. RTD/TC
      * (1-11) come pre-calculated from the card, so no scaling. */
@@ -691,10 +693,12 @@ static void build_channel_form(void)
     ta_hi   = form_ta(form_row("Range high"), NULL);
     ta_ahi  = form_ta(form_row("Alarm high"), NULL);
     ta_alo  = form_ta(form_row("Alarm low"), NULL);
+    ta_offset = form_ta(form_row("Offset (+/-)"), NULL);
     ta_numeric(ta_lo);
     ta_numeric(ta_hi);
     ta_numeric(ta_ahi);
     ta_numeric(ta_alo);
+    ta_numeric(ta_offset);
 
     /* card output scaling rows - shown only for mA/V/mV/ohm types */
     row_uzero = form_row("Card zero (counts)");

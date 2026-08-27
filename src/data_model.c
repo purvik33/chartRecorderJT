@@ -132,6 +132,7 @@ void data_model_init(void)
         c->cnt_lo = -2000.0f;   /* ADC count at range low  (user zero) */
         c->cnt_hi = 20000.0f;   /* ADC count at range high (user span) */
         c->decimals = 1;        /* display decimals for linear inputs */
+        c->offset   = 0.0f;     /* calibration offset (added to PV) */
         c->status = CH_OK;
 
         phase[i] = (float)(i / CH_PER_GROUP) * 0.7f + (float)(i % CH_PER_GROUP) * 1.3f;
