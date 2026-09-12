@@ -642,32 +642,33 @@ static void build_root(void)
     lv_obj_set_style_text_color(ln, COL_TEXT, 0);
     lv_obj_center(ln);
 
-    /* clock pinned to the far right with a fixed width so the status icons
-     * to its left keep a constant, tidy gap as the time text changes */
+    /* date + time on the far right. Seed it with a full-width placeholder so
+     * it auto-sizes to the real width now and the status icons anchor to its
+     * left correctly; the live text is the same length, so nothing shifts. */
     lbl_clock = lv_label_create(bar);
     lv_obj_set_style_text_color(lbl_clock, COL_MUTED, 0);
-    lv_obj_set_width(lbl_clock, 80);
-    lv_label_set_long_mode(lbl_clock, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_text_align(lbl_clock, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_text(lbl_clock, "00-00-00  00:00:00");
     lv_obj_align(lbl_clock, LV_ALIGN_RIGHT_MID, -12, 0);
 
-    /* Card link icon: a multidrop trunk with three nodes */
+    /* Card link icon: a multidrop bus - a centred trunk line with three
+     * evenly spaced round drop nodes */
     rs_ic = lv_obj_create(bar);
     lv_obj_remove_style_all(rs_ic);
-    lv_obj_set_size(rs_ic, 22, 14);
+    lv_obj_set_size(rs_ic, 24, 16);
     lv_obj_remove_flag(rs_ic, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align_to(rs_ic, lbl_clock, LV_ALIGN_OUT_LEFT_MID, -18, 0);
+    lv_obj_align_to(rs_ic, lbl_clock, LV_ALIGN_OUT_LEFT_MID, -16, 0);
     {
         lv_obj_t *e;
         e = lv_obj_create(rs_ic); lv_obj_remove_style_all(e);   /* trunk */
-        lv_obj_set_size(e, 20, 2); lv_obj_set_pos(e, 1, 6);
+        lv_obj_set_size(e, 20, 2); lv_obj_set_pos(e, 2, 7);
+        lv_obj_set_style_radius(e, 1, 0);
         lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(e, COL_MUTED, 0);
-        int nx[3] = { 0, 9, 18 };                               /* nodes */
+        int nx[3] = { 2, 10, 18 };                              /* nodes */
         for (int k = 0; k < 3; k++) {
             e = lv_obj_create(rs_ic); lv_obj_remove_style_all(e);
-            lv_obj_set_size(e, 4, 4); lv_obj_set_pos(e, nx[k], 5);
-            lv_obj_set_style_radius(e, 1, 0);
+            lv_obj_set_size(e, 5, 5); lv_obj_set_pos(e, nx[k], 5);
+            lv_obj_set_style_radius(e, LV_RADIUS_CIRCLE, 0);
             lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
             lv_obj_set_style_bg_color(e, COL_MUTED, 0);
         }
