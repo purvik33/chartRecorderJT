@@ -551,8 +551,11 @@ static void refresh_timer_cb(lv_timer_t *t)
             ? (comm_link_ok() ? COL_ACCENT : COL_ALARM_TXT)
             : COL_MUTED;
         uint32_t cc = lv_obj_get_child_count(rs_ic);
-        for (uint32_t k = 0; k < cc; k++)
-            lv_obj_set_style_bg_color(lv_obj_get_child(rs_ic, k), lc, 0);
+        for (uint32_t k = 0; k < cc; k++) {
+            lv_obj_t *ch = lv_obj_get_child(rs_ic, k);
+            lv_obj_set_style_bg_color(ch, lc, 0);     /* rects (fallback) */
+            lv_obj_set_style_line_color(ch, lc, 0);   /* line-drawn arrows */
+        }
     }
 
     wifi_icon_update();
@@ -650,27 +653,28 @@ static void build_root(void)
     lv_label_set_text(lbl_clock, "00-00-00  00:00:00");
     lv_obj_align(lbl_clock, LV_ALIGN_RIGHT_MID, -12, 0);
 
-    /* Card link icon: a multidrop bus - a centred trunk line with three
-     * evenly spaced round drop nodes */
+    /* Card link icon: two data-exchange arrows (top -> right, bottom <- left).
+     * Each arrow is a shaft line plus a chevron head; the status colour loop
+     * recolours the lines (green = link up, red = down, grey = demo). */
     rs_ic = lv_obj_create(bar);
     lv_obj_remove_style_all(rs_ic);
-    lv_obj_set_size(rs_ic, 24, 16);
+    lv_obj_set_size(rs_ic, 26, 16);
     lv_obj_remove_flag(rs_ic, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align_to(rs_ic, lbl_clock, LV_ALIGN_OUT_LEFT_MID, -16, 0);
     {
-        lv_obj_t *e;
-        e = lv_obj_create(rs_ic); lv_obj_remove_style_all(e);   /* trunk */
-        lv_obj_set_size(e, 20, 2); lv_obj_set_pos(e, 2, 7);
-        lv_obj_set_style_radius(e, 1, 0);
-        lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(e, COL_MUTED, 0);
-        int nx[3] = { 2, 10, 18 };                              /* nodes */
-        for (int k = 0; k < 3; k++) {
-            e = lv_obj_create(rs_ic); lv_obj_remove_style_all(e);
-            lv_obj_set_size(e, 5, 5); lv_obj_set_pos(e, nx[k], 5);
-            lv_obj_set_style_radius(e, LV_RADIUS_CIRCLE, 0);
-            lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
-            lv_obj_set_style_bg_color(e, COL_MUTED, 0);
+        static const lv_point_precise_t p_top_shaft[] = {{2, 4},  {21, 4}};
+        static const lv_point_precise_t p_top_head[]  = {{17, 1}, {21, 4}, {17, 7}};
+        static const lv_point_precise_t p_bot_shaft[] = {{5, 12}, {24, 12}};
+        static const lv_point_precise_t p_bot_head[]  = {{9, 9},  {5, 12}, {9, 15}};
+        const lv_point_precise_t *pts[4] =
+            { p_top_shaft, p_top_head, p_bot_shaft, p_bot_head };
+        const uint32_t np[4] = { 2, 3, 2, 3 };
+        for (int k = 0; k < 4; k++) {
+            lv_obj_t *ln = lv_line_create(rs_ic);
+            lv_line_set_points(ln, pts[k], np[k]);
+            lv_obj_set_style_line_width(ln, 2, 0);
+            lv_obj_set_style_line_rounded(ln, true, 0);
+            lv_obj_set_style_line_color(ln, COL_MUTED, 0);
         }
     }
 
