@@ -609,7 +609,7 @@ static void build_root(void)
 
     lv_obj_t *btn_prev = lv_button_create(bar);
     lv_obj_set_size(btn_prev, 36, 30);
-    lv_obj_align(btn_prev, LV_ALIGN_LEFT_MID, 210, 0);
+    lv_obj_align_to(btn_prev, logo, LV_ALIGN_OUT_RIGHT_MID, 22, 0);
     lv_obj_set_style_bg_color(btn_prev, COL_BG, 0);
     lv_obj_set_style_border_color(btn_prev, COL_BORDER, 0);
     lv_obj_set_style_border_width(btn_prev, 1, 0);
@@ -620,13 +620,18 @@ static void build_root(void)
     lv_obj_set_style_text_color(lp, COL_TEXT, 0);
     lv_obj_center(lp);
 
+    /* group label sits between the prev/next arrows; fixed width + centered
+     * so the arrows never drift as the text changes (Group 1 .. Group 5) */
     lbl_group = lv_label_create(bar);
     lv_obj_set_style_text_color(lbl_group, COL_MUTED, 0);
-    lv_obj_align(lbl_group, LV_ALIGN_LEFT_MID, 258, 0);
+    lv_obj_set_width(lbl_group, 176);
+    lv_label_set_long_mode(lbl_group, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_align(lbl_group, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align_to(lbl_group, btn_prev, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
 
     lv_obj_t *btn_next = lv_button_create(bar);
     lv_obj_set_size(btn_next, 36, 30);
-    lv_obj_align(btn_next, LV_ALIGN_LEFT_MID, 430, 0);
+    lv_obj_align_to(btn_next, lbl_group, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
     lv_obj_set_style_bg_color(btn_next, COL_BG, 0);
     lv_obj_set_style_border_color(btn_next, COL_BORDER, 0);
     lv_obj_set_style_border_width(btn_next, 1, 0);
@@ -637,8 +642,13 @@ static void build_root(void)
     lv_obj_set_style_text_color(ln, COL_TEXT, 0);
     lv_obj_center(ln);
 
+    /* clock pinned to the far right with a fixed width so the status icons
+     * to its left keep a constant, tidy gap as the time text changes */
     lbl_clock = lv_label_create(bar);
     lv_obj_set_style_text_color(lbl_clock, COL_MUTED, 0);
+    lv_obj_set_width(lbl_clock, 80);
+    lv_label_set_long_mode(lbl_clock, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_align(lbl_clock, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_align(lbl_clock, LV_ALIGN_RIGHT_MID, -12, 0);
 
     /* Card link icon: a multidrop trunk with three nodes */
@@ -646,7 +656,7 @@ static void build_root(void)
     lv_obj_remove_style_all(rs_ic);
     lv_obj_set_size(rs_ic, 22, 14);
     lv_obj_remove_flag(rs_ic, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(rs_ic, LV_ALIGN_RIGHT_MID, -166, 0);
+    lv_obj_align_to(rs_ic, lbl_clock, LV_ALIGN_OUT_LEFT_MID, -18, 0);
     {
         lv_obj_t *e;
         e = lv_obj_create(rs_ic); lv_obj_remove_style_all(e);   /* trunk */
@@ -666,7 +676,7 @@ static void build_root(void)
     lbl_alarm = lv_label_create(bar);
     lv_label_set_text(lbl_alarm, LV_SYMBOL_BELL);
     lv_obj_set_style_text_color(lbl_alarm, COL_MUTED, 0);
-    lv_obj_align(lbl_alarm, LV_ALIGN_RIGHT_MID, -230, 0);
+    lv_obj_align_to(lbl_alarm, rs_ic, LV_ALIGN_OUT_LEFT_MID, -16, 0);
 
     /* WiFi logo (arcs), just left of the alarm bell */
     lbl_wifi = lv_label_create(bar);
