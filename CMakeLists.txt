@@ -45,6 +45,7 @@ add_executable(recorder_ui
     src/history.c
     src/ui/ui.c
     src/ui/img_logo.c
+    src/ui/img_comm.c
     src/ui/font_units_12.c
     src/ui/font_units_14.c
     src/ui/font_units_16.c

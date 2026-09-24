@@ -82,6 +82,8 @@ LV_IMAGE_DECLARE(img_logo_bar_red);
 LV_IMAGE_DECLARE(img_logo_bar_wht);
 LV_IMAGE_DECLARE(img_logo_lg_red);
 LV_IMAGE_DECLARE(img_logo_lg_wht);
+/* Card link status icon (network-node triangle), tinted by link state */
+LV_IMAGE_DECLARE(img_comm);
 const lv_image_dsc_t *ui_logo_bar(void);
 const lv_image_dsc_t *ui_logo_lg(void);
 lv_color_t ui_brand_color(void);
