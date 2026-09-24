@@ -65,8 +65,10 @@ static void serial_close(serial_t h) { CloseHandle(h); }
 #include <unistd.h>
 #include <time.h>
 #include <linux/gpio.h>
+#include <linux/serial.h>
 #include <sys/ioctl.h>
 #include <string.h>
+#include <stdlib.h>
 typedef int serial_t;
 #define SERIAL_BAD (-1)
 static void msleep(int ms) { usleep(ms * 1000); }
@@ -86,6 +88,7 @@ static uint32_t now_ms(void)
 #define DE_GPIO_LINE 17                 /* BCM GPIO17 = 40-pin header pin 11 */
 
 static int de_fd = -1;                  /* line-request fd; -1 = not available */
+static int rs485_kernel = 0;            /* 1 = driver toggles RTS/DE itself */
 
 static void mb_de_init(void)
 {
@@ -116,7 +119,6 @@ static void mb_de_set(int on)
 
 static serial_t serial_open(const char *port, int baud)
 {
-    mb_de_init();                        /* make sure DE control is ready */
     int fd = open(port, O_RDWR | O_NOCTTY);
     if (fd < 0) return SERIAL_BAD;
 
@@ -141,15 +143,39 @@ static serial_t serial_open(const char *port, int baud)
     tio.c_cc[VMIN]  = 0;
     tio.c_cc[VTIME] = 2;   /* 200 ms read timeout */
     tcsetattr(fd, TCSANOW, &tio);
+
+    /* Prefer kernel RS-485 mode: the UART driver asserts RTS (= the DE/RE
+     * line on GPIO17) during transmit and drops it right after the last bit,
+     * with hardware timing - avoiding the userspace turnaround jitter that
+     * loses the start of the card's reply. Needs GPIO17 muxed to PL011 RTS0
+     * (ALT3), done at service start with "pinctrl set 17 a3" - see
+     * recorder.service ExecStartPre. Falls back to software GPIO DE. */
+    struct serial_rs485 rs;
+    memset(&rs, 0, sizeof rs);
+    rs.flags = SER_RS485_ENABLED | SER_RS485_RTS_ON_SEND;
+    if (ioctl(fd, TIOCSRS485, &rs) == 0) {
+        rs485_kernel = 1;
+    } else {
+        rs485_kernel = 0;
+        mb_de_init();               /* software GPIO17 direction fallback */
+    }
     return fd;
 }
 static int serial_write(serial_t fd, const uint8_t *buf, int n)
 {
+    if (rs485_kernel) {           /* driver toggles DE via RTS with hw timing */
+        int w = (int)write(fd, buf, (size_t)n);
+        tcdrain(fd);
+        return w;
+    }
+    /* software fallback: no kernel RS-485, so pulse DE around the frame.
+     * Userspace turnaround has scheduling jitter - the kernel path above
+     * is preferred whenever the driver supports TIOCSRS485. */
     mb_de_set(1);                 /* drive the RS-485 bus (DE high) */
     usleep(40);                   /* let the transceiver enable */
     int w = (int)write(fd, buf, (size_t)n);
-    tcdrain(fd);                  /* wait until every bit is on the wire */
-    usleep(200);                  /* guard: last stop bit clears the shifter */
+    tcdrain(fd);                  /* wait until the last byte is on the wire */
+    usleep(150);                  /* guard before releasing the driver */
     mb_de_set(0);                 /* release bus / enable receive (DE low) */
     return w;
 }

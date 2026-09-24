@@ -5,6 +5,9 @@ After=systemd-user-sessions.service
 [Service]
 Type=simple
 WorkingDirectory=/home/rishi/recorder/build
+# Mux GPIO17 (header pin 11) to PL011 RTS0 (ALT3) so the kernel RS-485 mode
+# can hardware-time the RS-485 DE/RE line on the Card link UART.
+ExecStartPre=/usr/bin/pinctrl set 17 a3
 ExecStart=/home/rishi/recorder/build/recorder_ui /dev/dri/by-path/platform-gpu-card /dev/input/by-id/usb-Weida_Hi-Tech_CoolTouchR_System-event-if00
 Restart=always
 RestartSec=2
