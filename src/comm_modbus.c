@@ -64,6 +64,9 @@ static void serial_close(serial_t h) { CloseHandle(h); }
 #include <termios.h>
 #include <unistd.h>
 #include <time.h>
+#include <linux/gpio.h>
+#include <sys/ioctl.h>
+#include <string.h>
 typedef int serial_t;
 #define SERIAL_BAD (-1)
 static void msleep(int ms) { usleep(ms * 1000); }
@@ -74,8 +77,46 @@ static uint32_t now_ms(void)
     return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
+/* ---- RS-485 DE/RE direction control ------------------------------------
+ * The card link is half-duplex RS-485 via a TTL<->485 board whose combined
+ * DE+RE line is wired to GPIO17 (header pin 11). We drive it HIGH while
+ * transmitting and LOW to receive - the USB adapter used to do this in
+ * hardware. Uses the GPIO character device (portable across SBCs). */
+#define DE_GPIO_CHIP "/dev/gpiochip0"   /* pinctrl-bcm2711 on the Pi 4 */
+#define DE_GPIO_LINE 17                 /* BCM GPIO17 = 40-pin header pin 11 */
+
+static int de_fd = -1;                  /* line-request fd; -1 = not available */
+
+static void mb_de_init(void)
+{
+    if (de_fd >= 0) return;             /* already set up */
+    int chip = open(DE_GPIO_CHIP, O_RDONLY | O_CLOEXEC);
+    if (chip < 0) return;
+    struct gpio_v2_line_request rq;
+    memset(&rq, 0, sizeof(rq));
+    rq.offsets[0]   = DE_GPIO_LINE;
+    rq.num_lines    = 1;
+    rq.config.flags = GPIO_V2_LINE_FLAG_OUTPUT;   /* starts low = receive */
+    strncpy(rq.consumer, "pr40-rs485-de", sizeof(rq.consumer) - 1);
+    if (ioctl(chip, GPIO_V2_GET_LINE_IOCTL, &rq) == 0 && rq.fd >= 0)
+        de_fd = rq.fd;
+    close(chip);
+    event_log("COMM", de_fd >= 0 ? "RS-485 DE ready on GPIO%d"
+                                 : "RS-485 DE GPIO%d unavailable", DE_GPIO_LINE);
+}
+
+static void mb_de_set(int on)
+{
+    if (de_fd < 0) return;
+    struct gpio_v2_line_values v;
+    v.mask = 1;
+    v.bits = on ? 1 : 0;
+    ioctl(de_fd, GPIO_V2_LINE_SET_VALUES_IOCTL, &v);
+}
+
 static serial_t serial_open(const char *port, int baud)
 {
+    mb_de_init();                        /* make sure DE control is ready */
     int fd = open(port, O_RDWR | O_NOCTTY);
     if (fd < 0) return SERIAL_BAD;
 
@@ -104,7 +145,13 @@ static serial_t serial_open(const char *port, int baud)
 }
 static int serial_write(serial_t fd, const uint8_t *buf, int n)
 {
-    return (int)write(fd, buf, (size_t)n);
+    mb_de_set(1);                 /* drive the RS-485 bus (DE high) */
+    usleep(40);                   /* let the transceiver enable */
+    int w = (int)write(fd, buf, (size_t)n);
+    tcdrain(fd);                  /* wait until every bit is on the wire */
+    usleep(200);                  /* guard: last stop bit clears the shifter */
+    mb_de_set(0);                 /* release bus / enable receive (DE low) */
+    return w;
 }
 static int serial_read(serial_t fd, uint8_t *buf, int n)
 {
