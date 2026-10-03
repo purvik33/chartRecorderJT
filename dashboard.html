@@ -1038,6 +1038,13 @@ async function loadAlarms(){
   }
   almHdr=lines.shift().split(",");
   almRows=lines.map(l=>splitCsv(l));
+  // COMM link-loss is not an alarm - show only HIGH/LOW/OPEN
+  const ti=almHdr.findIndex(h=>h.trim().toLowerCase()==="type");
+  if(ti>=0)almRows=almRows.filter(c=>(c[ti]||"").trim().toUpperCase()!=="COMM");
+  if(!almRows.length){
+    body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
+      `No alarms recorded today.</div>`;return;
+  }
   almRows.reverse();          // newest first
   almPage=0;
   renderAlarms();

@@ -123,26 +123,25 @@ void alarm_eval(void)
 
     for (int i = 0; i < CH_TOTAL; i++) {
         channel_t *c = &g_ch[i];
-        if (c->status == CH_COMM || c->status == CH_OPEN) {
-            alarm_type_t t = (c->status == CH_OPEN) ? ALM_OPEN : ALM_COMM;
-            if (open_evt[i] < 0 || hist[open_evt[i]].type != t) {
+        if (c->status == CH_OPEN) {
+            if (open_evt[i] < 0 || hist[open_evt[i]].type != ALM_OPEN) {
                 close_event(i);
-                push_event(i, t, 0);
+                push_event(i, ALM_OPEN, 0);
             }
             continue;
         }
-        if (c->status == CH_SKIP || c->status == CH_UNDER ||
-            c->status == CH_OVER) {
-            /* not valid measurements - no hi/lo evaluation, no event */
+        /* CH_COMM (card-link loss) is deliberately NOT treated as an alarm -
+         * only HIGH / LOW / OPEN are recorded. Handle it like the other
+         * non-measurable states: no event, just clear any open one. */
+        if (c->status == CH_COMM || c->status == CH_SKIP ||
+            c->status == CH_UNDER || c->status == CH_OVER) {
             close_event(i);
             continue;
         }
 
-        /* channel is measuring again: close any open fault event
-         * (sensor reconnected / card responding again) */
-        if (open_evt[i] >= 0 &&
-            (hist[open_evt[i]].type == ALM_COMM ||
-             hist[open_evt[i]].type == ALM_OPEN))
+        /* channel is measuring again: close any open OPEN (sensor-open)
+         * event now that the sensor reads a valid value */
+        if (open_evt[i] >= 0 && hist[open_evt[i]].type == ALM_OPEN)
             close_event(i);
 
         float hys = (c->hi - c->lo) * 0.005f;   /* 0.5 % hysteresis */
@@ -228,6 +227,10 @@ int alarm_records_load(time_t t0, time_t t1, alarm_rec_t *out, int max)
                        "%23[^,],%7[^,],%15[^,],%7[^,],%7[^,],%19[^\r\n]",
                        ts, ch, tag, ty, ev, vv) < 5)
                 continue;
+
+            /* COMM link-loss is not an alarm - skip any legacy COMM rows
+             * so only HIGH / LOW / OPEN appear in the history. */
+            if (!strcmp(ty, "COMM")) continue;
 
             struct tm tm = {0};
             if (sscanf(ts, "%4d-%2d-%2d %2d:%2d:%2d",
