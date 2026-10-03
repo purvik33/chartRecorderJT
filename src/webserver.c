@@ -12,6 +12,7 @@
 #include "users.h"
 #include "email.h"
 #include "version.h"
+#include "modbus_tcp.h"   /* net_apply() / wifi_apply() */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -915,9 +916,17 @@ static void api_config_get(wsock_t s, const char *req)
     http_send(s, "200 OK", "application/json", b, (size_t)o);
 }
 
+/* Set when a wired/Wi-Fi key changes in a POST, so the handler can push
+ * the new settings to NetworkManager (nmcli) after saving - the on-screen
+ * menu does this via net_apply()/wifi_apply(); the web path used to only
+ * save to recorder.ini, so a static IP never reached the live interface. */
+static int g_net_dirty, g_wifi_dirty;
+
 /* apply one key=value pair to the running config (validated) */
 static void cfg_set(const char *k, const char *v)
 {
+    if (!strncmp(k, "net_", 4))  g_net_dirty  = 1;
+    if (!strncmp(k, "wifi_", 5)) g_wifi_dirty = 1;
     if (0) {}
     /* logging */
     else if (!strcmp(k, "store_interval")) g_cfg.store_interval = clampi(atoi(v), 60, 3600);
@@ -1065,6 +1074,7 @@ static void api_config_post(wsock_t s, const char *req)
     }
 
     int n = 0;
+    g_net_dirty = g_wifi_dirty = 0;
     for (const char *p = body; p && *p; ) {
         const char *amp = strchr(p, '&');
         const char *eq  = strchr(p, '=');
@@ -1087,6 +1097,13 @@ static void api_config_post(wsock_t s, const char *req)
               (g_cfg.cfr_enable && ss->cfr_idx >= 0) ? g_cfg.users[ss->cfr_idx].name
                                                      : "service login");
     http_send(s, "200 OK", "application/json", "{\"ok\":true}", 11);
+
+    /* Push network changes to the live interface AFTER acking, since
+     * reconfiguring the link the client is on can drop this connection
+     * (e.g. a Wi-Fi static-IP change). nmcli persists the profile, so the
+     * address then survives reboots. */
+    if (g_net_dirty)  net_apply();
+    if (g_wifi_dirty) wifi_apply();
 }
 
 /* POST /api/settings/unlock - service password (normal) or 21 CFR login */
