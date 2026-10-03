@@ -315,8 +315,24 @@ void scr_digital_refresh(void)
         channel_t *c = &snap;
 
         lv_label_set_text_fmt(t->lbl_tag, "CH%d  %s", base + i + 1, c->tag);
-        lv_label_set_text_fmt(t->lbl_sp_l, "L: %g", (double)c->alm_lo);
-        lv_label_set_text_fmt(t->lbl_sp_h, "H: %g", (double)c->alm_hi);
+        /* show a setpoint only when it is enabled (inside the range); the
+         * default alm_lo = lo-1 means "disabled". Use the channel's decimals
+         * so it matches the value above (bar hides disabled markers too). */
+        {
+            char b[24];
+            if (c->alm_lo > c->lo && c->alm_lo < c->hi) {
+                disp_str(b, sizeof(b), (double)c->alm_lo, ch_dec(c));
+                lv_label_set_text_fmt(t->lbl_sp_l, "L: %s", b);
+            } else {
+                lv_label_set_text(t->lbl_sp_l, "L: --");
+            }
+            if (c->alm_hi > c->lo && c->alm_hi < c->hi) {
+                disp_str(b, sizeof(b), (double)c->alm_hi, ch_dec(c));
+                lv_label_set_text_fmt(t->lbl_sp_h, "H: %s", b);
+            } else {
+                lv_label_set_text(t->lbl_sp_h, "H: --");
+            }
+        }
 
         if (c->status != CH_OK && c->status != CH_ALM_HI &&
             c->status != CH_ALM_LO) {

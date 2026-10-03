@@ -150,8 +150,13 @@ void scr_bar_refresh(void)
         data_unlock();
 
         lv_label_set_text_fmt(c->tag, "CH%d  %s", base + i + 1, snap.tag);
-        lv_label_set_text_fmt(c->hi_lbl, "%g", (double)snap.hi);
-        lv_label_set_text_fmt(c->lo_lbl, "%g", (double)snap.lo);
+        {   /* range labels with the channel's configured decimals */
+            char b[24];
+            disp_str(b, sizeof(b), (double)snap.hi, ch_dec(&snap));
+            lv_label_set_text_fmt(c->hi_lbl, "%s", b);
+            disp_str(b, sizeof(b), (double)snap.lo, ch_dec(&snap));
+            lv_label_set_text_fmt(c->lo_lbl, "%s", b);
+        }
 
         lv_color_t chcol = ui_ch_color(base + i);
         bool alm = (snap.status == CH_ALM_HI || snap.status == CH_ALM_LO);

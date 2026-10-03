@@ -163,6 +163,10 @@ static const int interval_vals[] = { 60, 300, 600, 900, 1800, 3600 };
 /* typing preview bar shown above the keyboard (mobile style) */
 static lv_obj_t *kb_prev, *kb_prev_lbl;
 static char kb_oldtxt[80];
+/* set while we change a textarea's text programmatically (clear-on-focus,
+ * restore-on-cancel) so the resulting VALUE_CHANGED isn't counted as a user
+ * edit - otherwise just tapping a field lit the Save button. */
+static int ta_prog;
 
 static void kb_preview_update(lv_obj_t *ta)
 {
@@ -188,7 +192,9 @@ static void ta_event_cb(lv_event_t *e)
         /* replace-on-edit: remember the old value and start empty */
         snprintf(kb_oldtxt, sizeof(kb_oldtxt), "%s",
                  lv_textarea_get_text(ta));
+        ta_prog = 1;
         lv_textarea_set_text(ta, "");
+        ta_prog = 0;
 
         lv_keyboard_set_textarea(kb, ta);
         intptr_t kind = (intptr_t)lv_obj_get_user_data(ta);
@@ -206,13 +212,16 @@ static void ta_event_cb(lv_event_t *e)
     } else if (code == LV_EVENT_VALUE_CHANGED) {
         if (kb_prev && !lv_obj_has_flag(kb_prev, LV_OBJ_FLAG_HIDDEN))
             kb_preview_update(ta);
-        save_mark_dirty();
+        if (!ta_prog) save_mark_dirty();   /* only real user edits */
     } else if (code == LV_EVENT_DEFOCUSED || code == LV_EVENT_READY ||
                code == LV_EVENT_CANCEL) {
         /* cancelled or left empty: restore the previous value */
         if (code == LV_EVENT_CANCEL ||
-            lv_textarea_get_text(ta)[0] == '\0')
+            lv_textarea_get_text(ta)[0] == '\0') {
+            ta_prog = 1;
             lv_textarea_set_text(ta, kb_oldtxt);
+            ta_prog = 0;
+        }
         lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
         if (kb_prev) lv_obj_add_flag(kb_prev, LV_OBJ_FLAG_HIDDEN);
     }
@@ -2006,7 +2015,7 @@ static void reg_read_cb(lv_event_t *e)
         lv_obj_set_style_text_color(lbl_rres, COL_ALARM_TXT, 0);
         return;
     }
-    char buf[256];
+    char buf[420];   /* up to 8 lines of ~42 chars each */
     int len = 0;
     buf[0] = 0;
     /* clamp: snprintf returns the INTENDED length, so len can run past
