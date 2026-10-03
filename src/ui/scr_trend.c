@@ -368,6 +368,7 @@ static void chart_event_cb(lv_event_t *e)
                               sec / 3600, (sec % 3600) / 60, sec % 60);
     }
     lv_obj_set_style_text_color(lbl_read, COL_TEXT, 0);
+    lv_obj_remove_flag(lbl_read, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void yscale_cb(lv_event_t *e)
@@ -479,12 +480,6 @@ void scr_trend_build(lv_obj_t *parent)
         btn_leg[i] = b;
     }
 
-    lbl_read = lv_label_create(top);
-    lv_label_set_text(lbl_read, "");
-    lv_obj_set_style_text_font(lbl_read, &font_units_14, 0);
-    lv_obj_set_style_text_color(lbl_read, COL_MUTED, 0);
-    lv_obj_align(lbl_read, LV_ALIGN_RIGHT_MID, -310, 0);
-
     /* ---- Y scale ---- */
     int chart_h = 480 - 40 - 56 - 44 - 24;
     yscale = lv_scale_create(parent);
@@ -511,6 +506,9 @@ void scr_trend_build(lv_obj_t *parent)
     lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, 1000);
     lv_chart_set_div_line_count(chart, 5, 7);
     lv_obj_set_style_size(chart, 0, 0, LV_PART_INDICATOR);
+    /* touch is used to read a point, not to pan - keep drags from scrolling
+     * the chart content (which pushed the pen/readout around) */
+    lv_obj_remove_flag(chart, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(chart, chart_event_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(chart, chart_event_cb, LV_EVENT_PRESSING, NULL);
 
@@ -602,6 +600,23 @@ void scr_trend_build(lv_obj_t *parent)
         lv_obj_set_style_text_font(lbl_x[i], &font_units_12, 0);
         lv_obj_set_style_text_color(lbl_x[i], COL_MUTED, 0);
     }
+
+    /* ---- tap/drag readout ---- floats over the chart's top-left with a
+     * translucent chip, so a long "tag  time  value unit" never overlaps the
+     * top-bar buttons (AUTO, zoom, channel ticks). Created last = on top. */
+    lbl_read = lv_label_create(parent);
+    lv_label_set_text(lbl_read, "");
+    lv_obj_add_flag(lbl_read, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_text_font(lbl_read, &font_units_14, 0);
+    lv_obj_set_style_text_color(lbl_read, COL_TEXT, 0);
+    lv_obj_set_style_bg_color(lbl_read, COL_BG, 0);
+    lv_obj_set_style_bg_opa(lbl_read, LV_OPA_80, 0);
+    lv_obj_set_style_border_color(lbl_read, COL_BORDER, 0);
+    lv_obj_set_style_border_width(lbl_read, 1, 0);
+    lv_obj_set_style_radius(lbl_read, 6, 0);
+    lv_obj_set_style_pad_hor(lbl_read, 8, 0);
+    lv_obj_set_style_pad_ver(lbl_read, 3, 0);
+    lv_obj_align(lbl_read, LV_ALIGN_TOP_LEFT, 72, 50);
 
     built = true;
     reload_cnt = 0;
