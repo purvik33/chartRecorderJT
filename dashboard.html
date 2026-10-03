@@ -662,6 +662,9 @@ function updateDigital(j){
 function fmtSp(v){return (Math.abs(v)>=1000||Number.isInteger(v))?String(v):v.toFixed(1);}
 /* fixed-decimal format that folds negative zero into +0 (never show "-0.0") */
 function fx(v,d){d=(d==null)?1:d;let s=Number(v).toFixed(d);return s.replace(/^-(0(?:\.0+)?)$/,"$1");}
+/* effective display decimals for a channel config row: linear inputs use the
+   per-channel setting, RTD/TC stay at 1 (mirrors ch_dec() on the recorder) */
+function chDec(c){return c&&c.lin?Math.max(0,Math.min(4,c.dec|0)):1;}
 
 /* ---------- Bar ---------- */
 function buildBar(n){
@@ -1174,11 +1177,16 @@ async function loadCfg(force){
 function rInput(lbl,desc,id,val,type){
   /* number inputs default to step=1, which makes decimals like -0.5 "invalid"
      and some browsers snap them to the nearest whole number on reload -
-     step="any" keeps decimals (offset, ranges, setpoints) exactly as entered */
-  const st=(type==="number")?' step="any"':"";
+     step="any" keeps decimals (offset, ranges, setpoints) exactly as entered.
+     "decimal" is a text field with a numeric keypad: unlike type=number it
+     keeps trailing zeros, so a value shows with its configured decimals. */
+  let attr="";
+  if(type==="number")       attr=' type="number" step="any"';
+  else if(type==="decimal") attr=' type="text" inputmode="decimal"';
+  else if(type)             attr=` type="${type}"`;
   return `<div class="row2"><div class="rinfo"><div class="rlbl">${lbl}</div>`+
     (desc?`<div class="rdesc">${cesc(desc)}</div>`:"")+`</div>`+
-    `<div class="rctl"><input id="${id}"${type?` type="${type}"`:""}${st} value="${cesc(val)}"></div></div>`;
+    `<div class="rctl"><input id="${id}"${attr} value="${cesc(val)}"></div></div>`;
 }
 function rSelect(lbl,desc,id,val,opts){
   return `<div class="row2"><div class="rinfo"><div class="rlbl">${lbl}</div>`+
@@ -1277,10 +1285,10 @@ function renderCfg(){
       `<div class="cfg-note2">Editing <b style="color:var(--ink)">CH${cfgChan+1} &middot; ${cesc(c.tag)}</b> (Group ${g+1}, CH ${g*8+1}-${g*8+8})</div>`+
       rInput("Tag","Identifier shown on the recorder screens","f_tag",c.tag)+
       rInput("Unit","Engineering unit","f_unit",c.unit)+
-      rInput("Range low","Bottom of the measuring range","f_lo",c.lo,"number")+
-      rInput("Range high","Top of the measuring range","f_hi",c.hi,"number")+
-      rInput("Alarm high","High alarm setpoint","f_almhi",c.almhi,"number")+
-      rInput("Alarm low","Low alarm setpoint","f_almlo",c.almlo,"number")+
+      rInput("Range low","Bottom of the measuring range","f_lo",fx(c.lo,chDec(c)),"decimal")+
+      rInput("Range high","Top of the measuring range","f_hi",fx(c.hi,chDec(c)),"decimal")+
+      rInput("Alarm high","High alarm setpoint","f_almhi",fx(c.almhi,chDec(c)),"decimal")+
+      rInput("Alarm low","Low alarm setpoint","f_almlo",fx(c.almlo,chDec(c)),"decimal")+
       rInput("Offset","Added to the reading to trim it (e.g. +0.5 shows 49.5 as 50)","f_off",c.offset,"number")+
       rSelect("Signal type","RTD / thermocouple values arrive calculated; linear inputs (mA, V, mV) arrive as raw counts and are scaled to the range","f_lin",c.lin,[[0,"Direct (RTD / thermocouple)"],[1,"Linear (scale ADC counts)"]])+
       rInput("ADC count at range low","Card count that reads as Range low (linear only)","f_cntlo",c.cntlo,"number")+
@@ -1366,6 +1374,16 @@ function renderCfg(){
     B.querySelectorAll(".netsec").forEach(x=>{x.hidden=(x.dataset.sec!==s);});});
   B.querySelectorAll(".subtab[data-g]").forEach(b=>b.onclick=()=>{cfgChan=(+b.dataset.g)*8;renderCfg();});
   B.querySelectorAll(".subtab[data-c]").forEach(b=>b.onclick=()=>{cfgChan=+b.dataset.c;renderCfg();});
+  /* channel editor: re-render the range/alarm fields with the chosen
+     decimals as soon as Decimal places or Signal type changes */
+  const fdec=$("f_dec"), flin=$("f_lin");
+  function refmtRanges(){
+    const d=(flin&&flin.value==="1")?Math.max(0,Math.min(4,+((fdec&&fdec.value)||0))):1;
+    ["f_lo","f_hi","f_almhi","f_almlo"].forEach(id=>{const el=$(id);
+      if(el&&el.value!==""&&!isNaN(Number(el.value)))el.value=fx(Number(el.value),d);});
+  }
+  if(fdec)fdec.onchange=refmtRanges;
+  if(flin)flin.onchange=refmtRanges;
   const et=$("em_test");if(et)et.onclick=doTestEmail;
 }
 function renderUnlock(B){

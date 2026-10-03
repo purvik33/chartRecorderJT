@@ -329,6 +329,15 @@ static void ta_set_float(lv_obj_t *ta, float v)
     lv_textarea_set_text(ta, b);
 }
 
+/* like ta_set_float but shown with the channel's configured decimals, so
+ * the range / alarm fields read e.g. "100.0" when 1 decimal is selected */
+static void ta_set_dec(lv_obj_t *ta, float v, int dec)
+{
+    char b[24];
+    disp_str(b, sizeof(b), (double)v, dec);
+    lv_textarea_set_text(ta, b);
+}
+
 /* ---- section forms ------------------------------------------------------ */
 
 /* datasheet default range/unit per input type code */
@@ -382,17 +391,45 @@ static void chform_update_visibility(void)
     }
 }
 
+/* effective display decimals for the form's current input type:
+ * linear inputs use the selected count, RTD/TC stay at 1 (matches ch_dec) */
+static int chform_dec(void)
+{
+    int t = chform_type();
+    int lin = (t >= 12 && t <= 19);
+    return lin ? (int)lv_dropdown_get_selected(dd_dec) : 1;
+}
+
+/* re-render the range / alarm fields with the currently selected decimals,
+ * so changing "Decimal places" updates their display immediately */
+static void chform_apply_dec(void)
+{
+    int ed = chform_dec();
+    ta_set_dec(ta_lo,  (float)atof(lv_textarea_get_text(ta_lo)),  ed);
+    ta_set_dec(ta_hi,  (float)atof(lv_textarea_get_text(ta_hi)),  ed);
+    ta_set_dec(ta_ahi, (float)atof(lv_textarea_get_text(ta_ahi)), ed);
+    ta_set_dec(ta_alo, (float)atof(lv_textarea_get_text(ta_alo)), ed);
+}
+
+static void dec_change_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    if (form_loading) return;
+    chform_apply_dec();
+}
+
 static void channel_form_load(int ch)
 {
     form_loading = 1;
     data_lock();
     channel_t *c = &g_ch[ch];
+    int ed = ch_dec(c);
     lv_textarea_set_text(ta_tag,  c->tag);
     lv_textarea_set_text(ta_unit, c->unit);
-    ta_set_float(ta_lo,  c->lo);
-    ta_set_float(ta_hi,  c->hi);
-    ta_set_float(ta_ahi, c->alm_hi);
-    ta_set_float(ta_alo, c->alm_lo);
+    ta_set_dec(ta_lo,  c->lo,     ed);
+    ta_set_dec(ta_hi,  c->hi,     ed);
+    ta_set_dec(ta_ahi, c->alm_hi, ed);
+    ta_set_dec(ta_alo, c->alm_lo, ed);
     ta_set_float(ta_offset, c->offset);
     {   int d = c->decimals; if (d < 0) d = 0; if (d > 4) d = 4;
         lv_dropdown_set_selected(dd_dec, (uint32_t)d);
@@ -445,6 +482,7 @@ static void itype_change_cb(lv_event_t *e)
     ta_set_float(ta_hi, hi);
     lv_textarea_set_text(ta_unit, unit);
     chform_update_visibility();
+    chform_apply_dec();   /* show range/alarm with this type's decimals */
 }
 
 static void ch_save_cb(lv_event_t *e)
@@ -721,6 +759,7 @@ static void build_channel_form(void)
     lv_obj_set_style_bg_color(lv_dropdown_get_list(dd_dec), COL_PANEL, 0);
     lv_obj_set_style_text_color(lv_dropdown_get_list(dd_dec), COL_TEXT, 0);
     lv_obj_add_event_cb(dd_dec, dd_dirty_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(dd_dec, dec_change_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     page_save_button(LV_SYMBOL_SAVE "  Save channel", ch_save_cb);
 
