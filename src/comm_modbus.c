@@ -430,9 +430,19 @@ static float regs_to_float(const uint16_t *r)
     return v.f;
 }
 
+/* COMM debounce. A single dropped / garbled RS-485 frame used to flip a
+ * whole card (8 channels) to CH_COMM for one cycle and back the next, so a
+ * ~2.5% frame-loss rate produced tens of thousands of false COMM alarms a
+ * day. Now each card's read is retried a few times per cycle, and the card
+ * is only declared CH_COMM after several consecutive cycles still fail - a
+ * genuine, sustained link loss - while a brief blip keeps the last values. */
+#define MB_TRIES     3   /* read attempts per card, per poll cycle */
+#define MB_COMM_MISS 3   /* consecutive failed cycles before CH_COMM */
+
 void *comm_modbus_thread(void *arg)
 {
     (void)arg;
+    int card_fail[5] = { 0 };   /* consecutive failed cycles, per card */
 
     while (1) {
         serial_t cur;
@@ -484,19 +494,38 @@ void *comm_modbus_thread(void *arg)
         for (int card = 0; card < g_cfg.cards; card++) {
             uint16_t regs[16];
             int slave = g_cfg.slave_base + card;
+
+            /* retry a few times within the cycle to ride out transient
+             * single-frame glitches before counting this cycle as a miss */
             pthread_mutex_lock(&bus_mtx);
-            int ok = (bus != SERIAL_BAD &&
-                      mb_read_regs(bus, slave, g_cfg.func,
+            int ok = 0;
+            for (int attempt = 0; attempt < MB_TRIES && !ok; attempt++) {
+                if (bus == SERIAL_BAD) break;
+                ok = (mb_read_regs(bus, slave, g_cfg.func,
                                    g_cfg.reg_base, nreg, regs) == 0);
+                if (!ok && attempt < MB_TRIES - 1) msleep(2);
+            }
             pthread_mutex_unlock(&bus_mtx);
+
+            if (!ok) {
+                /* debounce: a brief blip keeps the last good values; only
+                 * after MB_COMM_MISS consecutive bad cycles is the card
+                 * really gone, and its channels marked CH_COMM */
+                if (card_fail[card] < 255) card_fail[card]++;
+                if (card_fail[card] >= MB_COMM_MISS) {
+                    data_lock();
+                    for (int c = 0; c < CH_PER_GROUP; c++)
+                        g_ch[card * CH_PER_GROUP + c].status = CH_COMM;
+                    data_unlock();
+                }
+                if (card < g_cfg.cards - 1) msleep(3);
+                continue;
+            }
+            card_fail[card] = 0;
 
             data_lock();
             for (int c = 0; c < CH_PER_GROUP; c++) {
                 channel_t *ch = &g_ch[card * CH_PER_GROUP + c];
-                if (!ok) {
-                    ch->status = CH_COMM;
-                    continue;
-                }
                 float cnt;   /* raw reading from the card (count for linear) */
                 if (g_cfg.fmt == FMT_FLOAT) {
                     cnt = regs_to_float(&regs[c * 2]);
