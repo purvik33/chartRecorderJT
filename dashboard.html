@@ -1054,9 +1054,20 @@ function renderAlarms(){
   const pages=Math.max(1,Math.ceil(total/PAGE_SZ));
   if(almPage>=pages)almPage=pages-1; if(almPage<0)almPage=0;
   const start=almPage*PAGE_SZ, slice=almRows.slice(start,start+PAGE_SZ);
+  // columns we special-case: value (reformat to the channel's decimals)
+  // and channel (to look that per-channel decimal count up from LIVE)
+  const valCol=almHdr.findIndex(h=>h.trim().toLowerCase()==="value");
+  const chCol =almHdr.findIndex(h=>h.trim().toLowerCase()==="channel");
   let html=`<div class="tbl-wrap"><table><thead><tr>`+
     almHdr.map(h=>`<th>${esc(h.trim())}</th>`).join("")+`</tr></thead><tbody>`;
   slice.forEach(cols=>{
+    // decimals configured for this row's channel (fall back to as-logged)
+    let dec=null;
+    if(chCol>=0){
+      const m=/(\d+)/.exec(cols[chCol]||"");
+      if(m&&LIVE&&LIVE.ch){const ci=(+m[1])-1;
+        if(LIVE.ch[ci]&&LIVE.ch[ci].dec!=null)dec=LIVE.ch[ci].dec;}
+    }
     html+="<tr>"+cols.map((cell,i)=>{
       const c=esc((cell||"").trim());
       const hl=(almHdr[i]||"").toLowerCase();
@@ -1064,6 +1075,8 @@ function renderAlarms(){
         const clr=/clear|ok|normal|reset|off/i.test(c);
         return `<td><span class="st${clr?" clr":""}">${c}</span></td>`;
       }
+      if(i===valCol&&dec!=null&&c!==""&&!isNaN(Number(c)))
+        return `<td>${esc(fx(Number(c),dec))}</td>`;
       return `<td>${c}</td>`;
     }).join("")+"</tr>";
   });
