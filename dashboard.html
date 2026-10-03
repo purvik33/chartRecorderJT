@@ -212,6 +212,18 @@ td .st{font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px;
   background:rgba(255,107,107,.16);color:var(--alm)}
 td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
 
+/* ---------- Pagination (alarm + data tables) ---------- */
+.pager{display:flex;align-items:center;justify-content:center;gap:6px;
+  flex-wrap:wrap;margin-top:14px}
+.pager button{background:var(--card2);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;min-width:34px;height:34px;padding:0 10px;font-size:13px;
+  cursor:pointer;font-variant-numeric:tabular-nums}
+.pager button:hover:not(:disabled){border-color:var(--acc)}
+.pager button.on{background:var(--acc);border-color:var(--acc);color:#07131f;
+  font-weight:700}
+.pager button:disabled{opacity:.4;cursor:default}
+.pager .pg-info{color:var(--mut);font-size:12.5px;margin:0 8px}
+
 /* ---------- Settings ---------- */
 .set-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
   gap:14px;margin-bottom:18px}
@@ -999,6 +1011,12 @@ function drawPolar(c){
 /* ============================================================
    ALARMS (parse /logs/alarms-<today>.csv)
    ============================================================ */
+/* Show newest entries first, 10 per page, and paginate the rest - a full
+   day's alarm log can be hundreds of rows and painting them all at once
+   froze the page for a moment. */
+const PAGE_SZ=10;
+let almHdr=[], almRows=[], almPage=0;
+
 async function loadAlarms(){
   const day=today();
   const active=LIVE?(LIVE.alarms|0):0;
@@ -1008,24 +1026,33 @@ async function loadAlarms(){
   try{const r=await fetch(`/logs/alarms-${day}.csv`);if(r.ok)txt=await r.text();}
   catch(e){}
   if(txt===null){
+    almRows=[];
     body.innerHTML=`<div class="empty"><div class="big">&#9873;</div>`+
       `No alarm log file for today.</div>`;return;
   }
   const lines=txt.trim().split("\n").filter(l=>l.length);
   if(lines.length<=1){
+    almRows=[];
     body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
       `No alarms recorded today.</div>`;return;
   }
-  const hdr=lines.shift().split(",");
-  const rows=lines.map(l=>splitCsv(l));
-  // newest first
-  rows.reverse();
+  almHdr=lines.shift().split(",");
+  almRows=lines.map(l=>splitCsv(l));
+  almRows.reverse();          // newest first
+  almPage=0;
+  renderAlarms();
+}
+function renderAlarms(){
+  const body=$("alm-body"), total=almRows.length;
+  const pages=Math.max(1,Math.ceil(total/PAGE_SZ));
+  if(almPage>=pages)almPage=pages-1; if(almPage<0)almPage=0;
+  const start=almPage*PAGE_SZ, slice=almRows.slice(start,start+PAGE_SZ);
   let html=`<div class="tbl-wrap"><table><thead><tr>`+
-    hdr.map(h=>`<th>${esc(h.trim())}</th>`).join("")+`</tr></thead><tbody>`;
-  rows.forEach(cols=>{
+    almHdr.map(h=>`<th>${esc(h.trim())}</th>`).join("")+`</tr></thead><tbody>`;
+  slice.forEach(cols=>{
     html+="<tr>"+cols.map((cell,i)=>{
       const c=esc((cell||"").trim());
-      const hl=(hdr[i]||"").toLowerCase();
+      const hl=(almHdr[i]||"").toLowerCase();
       if(/type|state|status|event/.test(hl)&&c){
         const clr=/clear|ok|normal|reset|off/i.test(c);
         return `<td><span class="st${clr?" clr":""}">${c}</span></td>`;
@@ -1034,7 +1061,27 @@ async function loadAlarms(){
     }).join("")+"</tr>";
   });
   html+="</tbody></table></div>";
+  html+=pagerHtml(total,almPage,pages,"almGo","alarm","alarms");
   body.innerHTML=html;
+}
+function almGo(p){almPage=p;renderAlarms();
+  $("alm-body").scrollIntoView({block:"nearest"});}
+
+/* Shared pager: a windowed set of page buttons + a total count. The
+   buttons call the view's go-function (almGo / dataGo) by name. */
+function pagerHtml(total,page,pages,fn,noun,nounPl){
+  const count=`<span class="pg-info">${total} ${total===1?noun:nounPl}</span>`;
+  if(pages<=1)return `<div class="pager">${count}</div>`;
+  const win=2, lo=Math.max(0,page-win), hi=Math.min(pages-1,page+win);
+  let b=`<button ${page===0?"disabled":""} onclick="${fn}(${page-1})">&lsaquo;</button>`;
+  if(lo>0){b+=`<button onclick="${fn}(0)">1</button>`;
+           if(lo>1)b+=`<span class="pg-info">&hellip;</span>`;}
+  for(let i=lo;i<=hi;i++)
+    b+=`<button class="${i===page?"on":""}" onclick="${fn}(${i})">${i+1}</button>`;
+  if(hi<pages-1){if(hi<pages-2)b+=`<span class="pg-info">&hellip;</span>`;
+                 b+=`<button onclick="${fn}(${pages-1})">${pages}</button>`;}
+  b+=`<button ${page===pages-1?"disabled":""} onclick="${fn}(${page+1})">&rsaquo;</button>`;
+  return `<div class="pager">${b}${count}</div>`;
 }
 function splitCsv(l){return l.split(",");}
 function esc(s){return String(s).replace(/[&<>"]/g,m=>(
@@ -1424,27 +1471,38 @@ function daysInRange(){
   const from=$("dl-from").value, to=$("dl-to").value;
   return (dayList||[]).filter(d=>(!from||d>=from)&&(!to||d<=to)).sort();
 }
-function renderData(){
+let dataDays=[], dataPage=0;
+/* entry point from the filters (range / search / Show) - reset to page 0 */
+function renderData(){ dataPage=0; renderDataPage(); }
+function renderDataPage(){
   const body=$("dl-body");
   const q=($("dl-search").value||"").trim();
   let days=daysInRange();
   if(q)days=days.filter(d=>d.includes(q));
+  days=days.slice().reverse();          // newest day first
+  dataDays=days;
   if(!days.length){
     body.innerHTML=`<div class="empty"><div class="big">&#128193;</div>`+
       (q?`No day matches “${pesc(q)}”.`:`No logged data in the selected range.`)+`</div>`;
     return;
   }
+  const total=days.length, pages=Math.max(1,Math.ceil(total/PAGE_SZ));
+  if(dataPage>=pages)dataPage=pages-1; if(dataPage<0)dataPage=0;
+  const start=dataPage*PAGE_SZ, slice=days.slice(start,start+PAGE_SZ);
   let h=`<div class="tbl-wrap"><table class="dl-tbl"><thead><tr>`+
     `<th>Date</th><th>Process data</th><th>Alarms</th><th>Events</th></tr></thead><tbody>`;
-  days.forEach(d=>{
+  slice.forEach(d=>{
     h+=`<tr><td>${d}</td>`+
        `<td><a href="/logs/${d}.csv" download="${d}.csv">${d}.csv</a></td>`+
        `<td><a href="/logs/alarms-${d}.csv" download="alarms-${d}.csv">download</a></td>`+
        `<td><a href="/logs/events-${d}.csv" download="events-${d}.csv">download</a></td></tr>`;
   });
   h+=`</tbody></table></div>`;
+  h+=pagerHtml(total,dataPage,pages,"dataGo","day","days");
   body.innerHTML=h;
 }
+function dataGo(p){dataPage=p;renderDataPage();
+  $("dl-body").scrollIntoView({block:"nearest"});}
 // concatenate every process CSV in the range into one file (single header)
 async function downloadRangeCSV(){
   const days=daysInRange();
