@@ -31,9 +31,6 @@ header{grid-area:hdr;display:flex;align-items:center;gap:16px;
 .brand{font-size:19px;letter-spacing:1px;font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:11px}
 .brand-logo{height:26px;width:auto;display:block}
 .brand span{color:var(--acc);font-weight:500;font-size:15px}
-.hdr-grp{color:var(--mut);font-size:13px;padding-left:16px;
-  border-left:1px solid var(--line);white-space:nowrap;}
-.hdr-grp b{color:var(--ink);font-weight:600}
 .hdr-right{margin-left:auto;display:flex;align-items:center;gap:12px;
   flex-wrap:wrap;justify-content:flex-end;}
 .pill{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;
@@ -368,7 +365,6 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
     box-shadow:8px 0 24px rgba(0,0,0,.4)}
   nav.open{transform:translateX(0)}
   .hamb{display:block;order:-1}
-  .hdr-grp{display:none}
   #scrim{display:none;position:fixed;inset:60px 0 0 0;background:rgba(6,13,20,.6);
     z-index:25}
   #scrim.show{display:block}
@@ -386,7 +382,6 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
   <header>
     <button class="hamb" id="hamb" aria-label="Menu">&#9776;</button>
     <div class="brand"><img src="/logo-white.png" alt="JETPACE" class="brand-logo"><span>PR-40 Recorder</span></div>
-    <div class="hdr-grp" id="hdr-grp">Group &middot; CH</div>
     <div class="hdr-right">
       <span class="pill" id="p-link"><span class="dot"></span>&mdash;</span>
       <span class="pill alm-pill clear" id="p-alm">0 alarms</span>
@@ -609,8 +604,6 @@ async function live(){
 function updateHeader(j){
   $("clk").textContent=j.time||"--:--:--";
   $("fw").textContent="v"+(j.fw||"?");
-  const lo=(j.grp-1)*CH_PER_GROUP+1, hi=j.grp*CH_PER_GROUP;
-  $("hdr-grp").innerHTML=`<b>Group ${j.grp}</b> &middot; CH ${lo}&ndash;${hi}`;
   // link pill
   const pl=$("p-link");
   pl.className="pill "+(j.link?"online":"offline");
