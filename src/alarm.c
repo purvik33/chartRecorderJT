@@ -147,10 +147,17 @@ void alarm_eval(void)
         float hys = (c->hi - c->lo) * 0.005f;   /* 0.5 % hysteresis */
         ch_status_t ns = CH_OK;
 
-        if      (c->value > c->alm_hi)       ns = CH_ALM_HI;
-        else if (c->value < c->alm_lo)       ns = CH_ALM_LO;
-        else if (c->status == CH_ALM_HI && c->value > c->alm_hi - hys) ns = CH_ALM_HI;
-        else if (c->status == CH_ALM_LO && c->value < c->alm_lo + hys) ns = CH_ALM_LO;
+        /* a setpoint counts only when it is enabled, i.e. inside the range -
+         * same rule the bar markers and digital tiles use. The default
+         * alm_lo = lo-1 means "low alarm off", so an under-range reading must
+         * not raise (or latch) a LOW alarm; likewise alm_hi >= hi = "high off". */
+        int hi_en = (c->alm_hi > c->lo && c->alm_hi < c->hi);
+        int lo_en = (c->alm_lo > c->lo && c->alm_lo < c->hi);
+
+        if      (hi_en && c->value > c->alm_hi)  ns = CH_ALM_HI;
+        else if (lo_en && c->value < c->alm_lo)  ns = CH_ALM_LO;
+        else if (hi_en && c->status == CH_ALM_HI && c->value > c->alm_hi - hys) ns = CH_ALM_HI;
+        else if (lo_en && c->status == CH_ALM_LO && c->value < c->alm_lo + hys) ns = CH_ALM_LO;
 
         if (ns != c->status) {
             if (ns == CH_ALM_HI)      push_event(i, ALM_HI, c->value);
