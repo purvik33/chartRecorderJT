@@ -17,9 +17,12 @@
 
 #ifdef _WIN32
 #include <direct.h>
+#include <io.h>
 static void ev_mkdir(void) { _mkdir("logs"); }
 #else
 #include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
 static void ev_mkdir(void) { mkdir("logs", 0755); }
 #endif
 
@@ -104,6 +107,18 @@ void event_log(const char *category, const char *fmt, ...)
         if (new_file)
             fprintf(f, "timestamp,category,description,user,hash\n");
         fprintf(f, "%s,%s\n", core, nh);
+        /* flush the audit entry to the medium before returning: a power cut
+         * must not silently drop the tail of the tamper-evident trail */
+        fflush(f);
+#ifdef _WIN32
+        _commit(_fileno(f));
+#else
+        fsync(fileno(f));
+        if (new_file) {
+            int d = open("logs", O_RDONLY | O_DIRECTORY);
+            if (d >= 0) { fsync(d); close(d); }
+        }
+#endif
         fclose(f);
         memcpy(ev_prev, nh, 65);
     }

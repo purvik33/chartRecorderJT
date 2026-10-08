@@ -443,6 +443,7 @@ void *comm_modbus_thread(void *arg)
 {
     (void)arg;
     int card_fail[5] = { 0 };   /* consecutive failed cycles, per card */
+    int card_down[5] = { 0 };   /* 1 once logged as not-responding (edge) */
 
     while (1) {
         serial_t cur;
@@ -517,9 +518,27 @@ void *comm_modbus_thread(void *arg)
                     for (int c = 0; c < CH_PER_GROUP; c++)
                         g_ch[card * CH_PER_GROUP + c].status = CH_COMM;
                     data_unlock();
+                    /* audit the monitoring gap: a single card can fail while
+                     * the bus (any_ok) still looks up, so this per-card edge
+                     * is the only record that CH n..n+7 went unmonitored */
+                    if (!card_down[card]) {
+                        card_down[card] = 1;
+                        event_log("COMM", "Card %d (slave %d) not responding"
+                                  " - CH%d-%d unmonitored",
+                                  card + 1, slave,
+                                  card * CH_PER_GROUP + 1,
+                                  card * CH_PER_GROUP + CH_PER_GROUP);
+                    }
                 }
                 if (card < g_cfg.cards - 1) msleep(3);
                 continue;
+            }
+            if (card_down[card]) {
+                card_down[card] = 0;
+                event_log("COMM", "Card %d (slave %d) responding again"
+                          " - CH%d-%d monitored", card + 1, slave,
+                          card * CH_PER_GROUP + 1,
+                          card * CH_PER_GROUP + CH_PER_GROUP);
             }
             card_fail[card] = 0;
 

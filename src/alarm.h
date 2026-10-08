@@ -5,7 +5,8 @@
 #include <time.h>
 #include <stdint.h>
 
-#define ALARM_HIST 100
+#define ALARM_HIST 256    /* live event ring; large enough that an open
+                             episode is never evicted under normal churn */
 
 typedef enum { ALM_HI = 0, ALM_LO, ALM_COMM, ALM_OPEN } alarm_type_t;
 

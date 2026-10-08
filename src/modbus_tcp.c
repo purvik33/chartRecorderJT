@@ -8,6 +8,7 @@
 #include "data_model.h"
 #include "alarm.h"
 #include "events.h"
+#include "users.h"
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
@@ -141,6 +142,15 @@ static int local_holding_reg(int addr, uint16_t *out)
  * must be persisted after the request completes */
 static int local_write_reg(int addr, uint16_t val, int *dirty)
 {
+    /* 21 CFR Part 11: a Modbus/TCP write carries no authenticated identity,
+     * so when compliance mode is on refuse every write that changes a
+     * regulated function (alarm setpoints, acknowledge, store interval) and
+     * record the refused attempt. Monitoring stays available read-only. */
+    if (cfr_on()) {
+        event_log("COMM", "TCP write to reg %d refused - 21 CFR mode "
+                  "(remote change not attributable)", addr);
+        return -1;
+    }
     if (addr >= 0 && addr < CH_TOTAL) {
         float v = (float)(int16_t)val / 10.0f;
         data_lock();

@@ -5,6 +5,31 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#include <fcntl.h>
+#endif
+
+/* Force a just-written row all the way onto the storage medium, so a power
+ * cut loses at most the row being written now - never a stored alarm record.
+ * (The process-data logger already does this; the alarm audit log must too.) */
+static void alarm_durable(FILE *f, int new_file)
+{
+    fflush(f);
+#ifdef _WIN32
+    _commit(_fileno(f));
+    (void)new_file;
+#else
+    fsync(fileno(f));
+    if (new_file) {               /* also persist the new file's dir entry */
+        int d = open("logs", O_RDONLY | O_DIRECTORY);
+        if (d >= 0) { fsync(d); close(d); }
+    }
+#endif
+}
 
 /* ---- persistent alarm event log: logs/alarms-YYYY-MM-DD.csv ----
  * One row per event action (SET / CLEAR / ACK), chronological, so the
@@ -48,19 +73,13 @@ static void alarm_write_row(const alarm_row_t *row)
     if (new_file)
         fprintf(f, "timestamp,channel,tag,type,event,value\n");
     fputs(row->line, f);
+    alarm_durable(f, new_file);   /* survive power loss */
     fclose(f);
 }
 
-static void alarm_log_row(const alarm_evt_t *e, const char *action)
-{
-    alarm_row_t row;
-    alarm_fmt_row(&row, e, action);
-    alarm_write_row(&row);
-}
-
 /* rows produced during one locked alarm_eval() pass, flushed after unlock.
- * Worst case is a close + a re-open per channel. */
-static alarm_row_t pend_rows[2 * CH_TOTAL];
+ * Worst case per channel: close + evicted-slot close + re-open = 3 rows. */
+static alarm_row_t pend_rows[3 * CH_TOTAL];
 static int         pend_n;
 
 static void alarm_stage_row(const alarm_evt_t *e, const char *action)
@@ -80,9 +99,16 @@ static int inited;
 static void push_event(int ch, alarm_type_t type, float value)
 {
     alarm_evt_t *e = &hist[head];
-    /* if we overwrite an event that is still open, drop its reference */
+    /* about to reuse this ring slot: if it still holds an OPEN episode, close
+     * it in the log first so its CLEAR is never lost (audit completeness) */
     for (int i = 0; i < CH_TOTAL; i++)
-        if (open_evt[i] == head) open_evt[i] = -1;
+        if (open_evt[i] == head) {
+            if (e->t_clear == 0) {
+                e->t_clear = time(NULL);
+                alarm_stage_row(e, "CLEAR");
+            }
+            open_evt[i] = -1;
+        }
 
     e->t_set   = time(NULL);
     e->t_clear = 0;
@@ -160,9 +186,12 @@ void alarm_eval(void)
         else if (lo_en && c->status == CH_ALM_LO && c->value < c->alm_lo + hys) ns = CH_ALM_LO;
 
         if (ns != c->status) {
+            /* always close the prior episode first: a direct HIGH<->LOW jump
+             * in one poll must still write the first episode's CLEAR, or it
+             * would be an unclosed (phantom-ACTIVE) record in the trail */
+            close_event(i);
             if (ns == CH_ALM_HI)      push_event(i, ALM_HI, c->value);
             else if (ns == CH_ALM_LO) push_event(i, ALM_LO, c->value);
-            else                      close_event(i);
             c->status = ns;
         }
     }
@@ -196,18 +225,30 @@ int alarm_unacked_count(void)
 
 void alarm_ack_all(void)
 {
-    int nacked = 0;
+    /* ack can arrive from the UI thread and the Modbus-TCP thread; serialise
+     * them so the static staging buffer below is single-writer */
+    static pthread_mutex_t ack_mtx = PTHREAD_MUTEX_INITIALIZER;
+    static alarm_row_t ack_rows[ALARM_HIST];
+    pthread_mutex_lock(&ack_mtx);
+
+    int nr = 0, nacked = 0;
     data_lock();
     for (int i = 0; i < count; i++) {
         if (!hist[i].acked && !hist[i].deleted) {
             hist[i].t_ack = time(NULL);
-            alarm_log_row(&hist[i], "ACK");
+            if (nr < ALARM_HIST) alarm_fmt_row(&ack_rows[nr++], &hist[i], "ACK");
             nacked++;
         }
         hist[i].acked = 1;
         if (hist[i].t_clear != 0) hist[i].deleted = 1;
     }
     data_unlock();
+
+    /* write the ACK rows AFTER releasing the data lock, so blocking SD I/O
+     * never stalls the acquisition / alarm-evaluation thread */
+    for (int i = 0; i < nr; i++) alarm_write_row(&ack_rows[i]);
+    pthread_mutex_unlock(&ack_mtx);
+
     if (nacked > 0)
         event_log("ALARM", "Acknowledged %d alarm(s)", nacked);
 }
