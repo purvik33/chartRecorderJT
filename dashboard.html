@@ -477,6 +477,11 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
       <div class="scr-head"><h2>Alarms</h2>
         <span class="sub" id="alm-sub"></span></div>
       <div class="ctl-row">
+        <label class="dl-lbl">Show <select id="alm-view">
+          <option value="alarm">Alarms</option>
+          <option value="both">Alarms + Events</option>
+          <option value="event">Events (audit trail)</option>
+        </select></label>
         <label class="dl-lbl">From <input type="date" id="alm-from"></label>
         <label class="dl-lbl">To <input type="date" id="alm-to"></label>
         <button class="btn" id="alm-show">Show</button>
@@ -1016,7 +1021,7 @@ function drawPolar(c){
    day's alarm log can be hundreds of rows and painting them all at once
    froze the page for a moment. */
 const PAGE_SZ=10;
-let almRecs=[], almPage=0;
+let almView="alarm", almRecs=[], almLog=[], almPage=0;
 
 /* every YYYY-MM-DD from `from` to `to` inclusive, in LOCAL time (capped) */
 function almDaysInRange(from,to){
@@ -1034,29 +1039,78 @@ async function loadAlarms(){
   let from=(fi&&fi.value)||today(), to=(ti2&&ti2.value)||today();
   if(from>to){ const t=from; from=to; to=t; }          // tolerate reversed range
   const days=almDaysInRange(from,to);
+  almView=$("alm-view")?$("alm-view").value:"alarm";
   const active=LIVE?(LIVE.alarms|0):0;
   const inclToday=(from<=today() && to>=today());
-  $("alm-sub").innerHTML=(from===to?pesc(from):`${pesc(from)} &rarr; ${pesc(to)}`)+
-    (inclToday?` &middot; ${active} active now`:"");
+  const rng=(from===to?pesc(from):`${pesc(from)} &rarr; ${pesc(to)}`);
+  $("alm-sub").innerHTML=rng+
+    ((inclToday&&almView!=="event")?` &middot; ${active} active now`:"");
   const body=$("alm-body");
-  // fetch each day's log, gather the raw event rows (chronological)
-  let hdr=null; const rows=[];
-  for(const d of days){
+
+  if(almView==="alarm"){
+    // reconstruct one record per alarm episode
+    let hdr=null; const rows=[];
+    for(const d of days){
+      let txt=null;
+      try{const r=await fetch(`/logs/alarms-${d}.csv`);if(r.ok)txt=await r.text();}catch(e){}
+      if(!txt)continue;
+      const lines=txt.trim().split("\n").filter(l=>l.length);
+      if(lines.length<=1)continue;
+      const h=lines.shift().split(","); if(!hdr)hdr=h;
+      for(const l of lines)rows.push(splitCsv(l));
+    }
+    almRecs=hdr?buildAlarmRecords(rows,hdr):[];
+    if(!almRecs.length){
+      body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
+        `No alarms in the selected range.</div>`;return;
+    }
+    almPage=0; renderAlarms(); return;
+  }
+
+  // "event" or "both": a chronological log (newest first)
+  const log=[];
+  for(const d of days){            // system event audit trail
     let txt=null;
-    try{const r=await fetch(`/logs/alarms-${d}.csv`);if(r.ok)txt=await r.text();}catch(e){}
+    try{const r=await fetch(`/logs/events-${d}.csv`);if(r.ok)txt=await r.text();}catch(e){}
     if(!txt)continue;
-    const lines=txt.trim().split("\n").filter(l=>l.length);
-    if(lines.length<=1)continue;
-    const h=lines.shift().split(","); if(!hdr)hdr=h;
-    for(const l of lines)rows.push(splitCsv(l));
+    for(const l of txt.trim().split("\n")){
+      if(!l||/^timestamp/i.test(l))continue;
+      const p=l.split(",");
+      log.push({ts:p[0]||"",cat:(p[1]||"").trim(),desc:p[2]||"",
+                user:(p[3]||"").trim(),src:"event"});
+    }
   }
-  almRecs=hdr?buildAlarmRecords(rows,hdr):[];
-  if(!almRecs.length){
-    body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
-      `No alarms in the selected range.</div>`;return;
+  if(almView==="both"){            // interleave alarm SET/CLEAR/ACK rows
+    for(const d of days){
+      let txt=null;
+      try{const r=await fetch(`/logs/alarms-${d}.csv`);if(r.ok)txt=await r.text();}catch(e){}
+      if(!txt)continue;
+      const lines=txt.trim().split("\n").filter(l=>l.length);
+      if(lines.length<=1)continue;
+      const h=lines.shift().split(","); const ix={};
+      h.forEach((x,i)=>ix[x.trim().toLowerCase()]=i);
+      for(const l of lines){
+        const c=splitCsv(l);
+        const ty=(c[ix.type]||"").trim().toUpperCase(); if(ty==="COMM")continue;
+        const ch=c[ix.channel]||"", tag=c[ix.tag]||"", ev=(c[ix.event]||"").trim();
+        let v=c[ix.value]||"";
+        const m=/(\d+)/.exec(ch); let dec=1;
+        if(m&&LIVE&&LIVE.ch){const ci=(+m[1])-1;
+          if(LIVE.ch[ci]&&LIVE.ch[ci].dec!=null)dec=LIVE.ch[ci].dec;}
+        if(v!==""&&!isNaN(Number(v)))v=fx(Number(v),dec);
+        log.push({ts:c[ix.timestamp]||"",cat:ty,
+                  desc:`${ch} ${tag} ${ev}${v!==""?" · "+v:""}`,
+                  user:"",src:"alarm"});
+      }
+    }
   }
-  almPage=0;
-  renderAlarms();
+  if(!log.length){
+    body.innerHTML=`<div class="empty"><div class="big">&#128196;</div>`+
+      (almView==="event"?`No events in the selected range.`
+                        :`No alarms or events in the selected range.`)+`</div>`;return;
+  }
+  log.sort((a,b)=>String(a.ts)<String(b.ts)?1:-1);   // newest first
+  almLog=log; almPage=0; renderAlarms();
 }
 /* Reconstruct one record per alarm episode (SET..CLEAR) from the raw event
    rows - the same lifecycle the recorder's History shows, so both agree.
@@ -1087,8 +1141,11 @@ function buildAlarmRecords(rows,hdr){
   return recs;
 }
 const ALM_COLS=["Channel","Tag","Type","Value","Generated","Acknowledged","Resolved"];
+const EVT_COLS=["Timestamp","Category","Description","User"];
 function almTime(ts){ return (ts&&ts.length>11)?esc(ts.slice(11)):esc(ts||""); }
-function renderAlarms(){
+/* dispatch: Alarms -> episode table; Events / Alarms+Events -> log table */
+function renderAlarms(){ return almView==="alarm"?renderAlarmEpisodes():renderEventLog(); }
+function renderAlarmEpisodes(){
   const body=$("alm-body"), total=almRecs.length;
   const pages=Math.max(1,Math.ceil(total/PAGE_SZ));
   if(almPage>=pages)almPage=pages-1; if(almPage<0)almPage=0;
@@ -1114,6 +1171,29 @@ function renderAlarms(){
   });
   html+="</tbody></table></div>";
   html+=pagerHtml(total,almPage,pages,"almGo","alarm","alarms");
+  body.innerHTML=html;
+}
+function renderEventLog(){
+  const body=$("alm-body"), total=almLog.length;
+  const pages=Math.max(1,Math.ceil(total/PAGE_SZ));
+  if(almPage>=pages)almPage=pages-1; if(almPage<0)almPage=0;
+  const start=almPage*PAGE_SZ, slice=almLog.slice(start,start+PAGE_SZ);
+  let html=`<div class="tbl-wrap"><table><thead><tr>`+
+    EVT_COLS.map(h=>`<th>${h}</th>`).join("")+`</tr></thead><tbody>`;
+  slice.forEach(r=>{
+    // alarm-type categories get the red chip; system categories stay plain
+    const cat=(r.cat||"-");
+    const catCell=/^(HIGH|LOW|OPEN)$/i.test(cat)?`<span class="st">${esc(cat)}</span>`:esc(cat);
+    html+="<tr>"+
+      `<td>${esc(r.ts)}</td>`+
+      `<td>${catCell}</td>`+
+      `<td>${esc(r.desc)}</td>`+
+      `<td>${r.user?esc(r.user):"&ndash;"}</td>`+
+    "</tr>";
+  });
+  html+="</tbody></table></div>";
+  const noun=almView==="event"?"event":"entry", nounPl=almView==="event"?"events":"entries";
+  html+=pagerHtml(total,almPage,pages,"almGo",noun,nounPl);
   body.innerHTML=html;
 }
 function almGo(p){almPage=p;renderAlarms();
@@ -1776,7 +1856,8 @@ $("dl-from").onchange=renderData;
 $("dl-to").onchange=renderData;
 $("dl-search").oninput=renderData;
 
-/* Alarms page: From-To date range */
+/* Alarms page: view selector + From-To date range */
+$("alm-view").onchange=loadAlarms;
 $("alm-show").onclick=loadAlarms;
 $("alm-today").onclick=()=>{$("alm-from").value=today();$("alm-to").value=today();loadAlarms();};
 $("alm-from").onchange=loadAlarms;
