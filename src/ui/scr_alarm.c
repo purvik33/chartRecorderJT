@@ -16,10 +16,14 @@
 
 static lv_obj_t *table;
 static lv_obj_t *lbl_summary;
-static lv_obj_t *btn_ack, *btn_cur, *btn_his, *btn_hp, *btn_hn, *lbl_hday;
+static lv_obj_t *btn_ack, *btn_cur, *btn_his;
+static lv_obj_t *btn_fp, *btn_fn, *lbl_from;   /* From (older bound) stepper */
+static lv_obj_t *btn_tp, *btn_tn, *lbl_to;     /* To (newer bound) stepper */
 static lv_obj_t *btn_pp, *btn_pn, *lbl_page;   /* bottom pager */
 static int  mode;          /* 0 = current, 1 = history */
-static int  hday_off;
+/* History range as days-back-from-today; From is the older bound, so the
+ * invariant is from_off >= to_off >= 0 (both 0 = just today). */
+static int  from_off, to_off;
 static int  hist_reload;
 static bool built;
 
@@ -143,22 +147,33 @@ static void fill_current(void)
     render_page();
 }
 
-static void fill_history(void)
+/* midnight (today - off days) */
+static time_t day_start(int off)
 {
-    lv_label_set_text(lbl_summary, "Alarm log");
-
     time_t now = time(NULL);
     struct tm tm = *localtime(&now);
     tm.tm_hour = 0; tm.tm_min = 0; tm.tm_sec = 0;
     tm.tm_isdst = -1;
-    time_t ds = mktime(&tm) - (time_t)hday_off * 86400;
+    return mktime(&tm) - (time_t)off * 86400;
+}
+
+static void set_day_label(lv_obj_t *lbl, const char *prefix, int off)
+{
+    time_t ds = day_start(off);
     struct tm dt = *localtime(&ds);
+    lv_label_set_text_fmt(lbl, "%s %02d-%02d-%02d", prefix,
+                          dt.tm_mday, dt.tm_mon + 1, (dt.tm_year + 1900) % 100);
+}
 
-    lv_label_set_text_fmt(lbl_hday, "%s%02d-%02d-%04d",
-                          hday_off == 0 ? "Today " : "",
-                          dt.tm_mday, dt.tm_mon + 1, dt.tm_year + 1900);
+static void fill_history(void)
+{
+    time_t t0 = day_start(from_off);            /* start of the From day */
+    time_t t1 = day_start(to_off) + 86399;      /* end of the To day     */
 
-    hist_n = alarm_records_load(ds, ds + 86399, hrecs, HREC_MAX);
+    set_day_label(lbl_from, "From", from_off);
+    set_day_label(lbl_to,   "To",   to_off);
+
+    hist_n = alarm_records_load(t0, t1, hrecs, HREC_MAX);
     render_page();
 }
 
@@ -171,16 +186,15 @@ static void mode_style(void)
     lv_obj_set_style_text_color(lv_obj_get_child(btn_his, 0),
                                 mode == 1 ? COL_BG : COL_MUTED, 0);
 
+    lv_obj_t *rng[6] = { btn_fp, btn_fn, lbl_from, btn_tp, btn_tn, lbl_to };
     if (mode == 1) {
-        lv_obj_remove_flag(btn_hp, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(btn_hn, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(lbl_hday, LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < 6; i++) lv_obj_remove_flag(rng[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(btn_ack, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(lbl_summary, LV_OBJ_FLAG_HIDDEN);   /* no room beside the range */
     } else {
-        lv_obj_add_flag(btn_hp, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(btn_hn, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(lbl_hday, LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < 6; i++) lv_obj_add_flag(rng[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(btn_ack, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(lbl_summary, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -193,18 +207,31 @@ static void mode_cb(lv_event_t *e)
     else           fill_current();
 }
 
-static void hprev_cb(lv_event_t *e)
+/* From older (unbounded back) */
+static void fprev_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
-    hday_off++;
+    from_off++;
     page = 0;
     fill_history();
 }
-
-static void hnext_cb(lv_event_t *e)
+/* From newer - not past the To bound */
+static void fnext_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
-    if (hday_off > 0) { hday_off--; page = 0; fill_history(); }
+    if (from_off > to_off) { from_off--; page = 0; fill_history(); }
+}
+/* To older - not before the From bound */
+static void tprev_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    if (to_off < from_off) { to_off++; page = 0; fill_history(); }
+}
+/* To newer - not into the future (today) */
+static void tnext_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    if (to_off > 0) { to_off--; page = 0; fill_history(); }
 }
 
 static void ppage_cb(lv_event_t *e)
@@ -253,15 +280,29 @@ void scr_alarm_build(lv_obj_t *parent)
     btn_his = small_btn(top, "History", mode_cb, (void *)(intptr_t)1, 96);
     lv_obj_align(btn_his, LV_ALIGN_LEFT_MID, 102, 0);
 
-    btn_hp = small_btn(top, LV_SYMBOL_LEFT, hprev_cb, NULL, 40);
-    lv_obj_align(btn_hp, LV_ALIGN_LEFT_MID, 220, 0);
-    lbl_hday = lv_label_create(top);
-    lv_obj_set_style_text_font(lbl_hday, &font_units_14, 0);
-    lv_obj_set_style_text_color(lbl_hday, COL_TEXT, 0);
-    lv_obj_align(lbl_hday, LV_ALIGN_LEFT_MID, 268, 0);
-    lv_obj_set_width(lbl_hday, 146);
-    btn_hn = small_btn(top, LV_SYMBOL_RIGHT, hnext_cb, NULL, 40);
-    lv_obj_align(btn_hn, LV_ALIGN_LEFT_MID, 418, 0);
+    /* From stepper: [<] From dd-mm-yy [>] */
+    btn_fp = small_btn(top, LV_SYMBOL_LEFT, fprev_cb, NULL, 36);
+    lv_obj_align(btn_fp, LV_ALIGN_LEFT_MID, 206, 0);
+    lbl_from = lv_label_create(top);
+    lv_obj_set_style_text_font(lbl_from, &font_units_14, 0);
+    lv_obj_set_style_text_color(lbl_from, COL_TEXT, 0);
+    lv_obj_set_style_text_align(lbl_from, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(lbl_from, 110);
+    lv_obj_align(lbl_from, LV_ALIGN_LEFT_MID, 246, 0);
+    btn_fn = small_btn(top, LV_SYMBOL_RIGHT, fnext_cb, NULL, 36);
+    lv_obj_align(btn_fn, LV_ALIGN_LEFT_MID, 360, 0);
+
+    /* To stepper: [<] To dd-mm-yy [>] */
+    btn_tp = small_btn(top, LV_SYMBOL_LEFT, tprev_cb, NULL, 36);
+    lv_obj_align(btn_tp, LV_ALIGN_LEFT_MID, 410, 0);
+    lbl_to = lv_label_create(top);
+    lv_obj_set_style_text_font(lbl_to, &font_units_14, 0);
+    lv_obj_set_style_text_color(lbl_to, COL_TEXT, 0);
+    lv_obj_set_style_text_align(lbl_to, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(lbl_to, 110);
+    lv_obj_align(lbl_to, LV_ALIGN_LEFT_MID, 450, 0);
+    btn_tn = small_btn(top, LV_SYMBOL_RIGHT, tnext_cb, NULL, 36);
+    lv_obj_align(btn_tn, LV_ALIGN_LEFT_MID, 564, 0);
 
     lbl_summary = lv_label_create(top);
     lv_obj_set_style_text_color(lbl_summary, COL_MUTED, 0);
@@ -340,7 +381,8 @@ void scr_alarm_refresh(void)
 
     if (mode == 0) {
         fill_current();
-    } else if (hday_off == 0 && ++hist_reload >= 20) {
+    } else if (to_off == 0 && ++hist_reload >= 20) {
+        /* only live-refresh when the range still ends today */
         hist_reload = 0;
         fill_history();
     }
