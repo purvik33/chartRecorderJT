@@ -125,6 +125,53 @@ void event_log(const char *category, const char *fmt, ...)
     pthread_mutex_unlock(&ev_mtx);
 }
 
+int events_load(time_t t0, time_t t1, event_rec_t *out, int max, int filter)
+{
+    int n = 0;
+    for (time_t day = t0; day <= t1 + 86400; day += 86400) {
+        struct tm dt = *localtime(&day);
+        char path[64];
+        snprintf(path, sizeof(path), "logs/events-%04d-%02d-%02d.csv",
+                 dt.tm_year + 1900, dt.tm_mon + 1, dt.tm_mday);
+        FILE *f = fopen(path, "r");
+        if (!f) continue;
+
+        char line[512];
+        while (fgets(line, sizeof(line), f)) {
+            if (!strncmp(line, "timestamp", 9)) continue;
+            char ts[20] = "", cat[12] = "", desc[80] = "",
+                 user[20] = "", hash[72] = "";
+            /* description is comma-sanitised by event_log, so this is safe */
+            if (sscanf(line, "%19[^,],%11[^,],%79[^,],%19[^,],%71[^\r\n]",
+                       ts, cat, desc, user, hash) < 4)
+                continue;
+            if (filter == 1 && !strcmp(cat, "COMM")) continue;
+            if (filter == 2 &&  strcmp(cat, "COMM")) continue;
+
+            struct tm tm = {0};
+            if (sscanf(ts, "%4d-%2d-%2d %2d:%2d:%2d",
+                       &tm.tm_year, &tm.tm_mon, &tm.tm_mday,
+                       &tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 6)
+                continue;
+            tm.tm_year -= 1900; tm.tm_mon -= 1; tm.tm_isdst = -1;
+            time_t t = mktime(&tm);
+            if (t < t0 || t > t1) continue;
+
+            if (n == max) {                 /* keep the newest `max` */
+                memmove(&out[0], &out[1], (size_t)(max - 1) * sizeof(out[0]));
+                n--;
+            }
+            event_rec_t *r = &out[n++];
+            snprintf(r->ts,   sizeof(r->ts),   "%s", ts);
+            snprintf(r->cat,  sizeof(r->cat),  "%s", cat);
+            snprintf(r->desc, sizeof(r->desc), "%s", desc);
+            snprintf(r->user, sizeof(r->user), "%s", user);
+        }
+        fclose(f);
+    }
+    return n;   /* chronological; callers render newest-first */
+}
+
 /* recompute the chain for a day file; returns 0 if intact, else the
  * 1-based entry number where tampering is first detected. */
 int event_audit_verify(const char *date, char *msg, size_t msglen)
