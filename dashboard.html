@@ -477,9 +477,9 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
       <div class="scr-head"><h2>Alarms</h2>
         <span class="sub" id="alm-sub"></span></div>
       <div class="ctl-row">
-        <button class="btn" id="alm-prev">&lsaquo; Prev day</button>
-        <label class="dl-lbl">Date <input type="date" id="alm-day"></label>
-        <button class="btn" id="alm-next">Next day &rsaquo;</button>
+        <label class="dl-lbl">From <input type="date" id="alm-from"></label>
+        <label class="dl-lbl">To <input type="date" id="alm-to"></label>
+        <button class="btn" id="alm-show">Show</button>
         <button class="btn" id="alm-today">Today</button>
       </div>
       <div id="alm-body"></div>
@@ -1018,53 +1018,50 @@ function drawPolar(c){
 const PAGE_SZ=10;
 let almHdr=[], almRows=[], almPage=0;
 
+/* every YYYY-MM-DD from `from` to `to` inclusive, in LOCAL time (capped) */
+function almDaysInRange(from,to){
+  const mk=s=>{const a=s.split("-");return new Date(+a[0],+a[1]-1,+a[2]);};
+  const p=n=>String(n).padStart(2,"0");
+  const fmt=d=>`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  const end=mk(to); const out=[]; let cur=mk(from), g=0;
+  while(cur<=end && g++<400){ out.push(fmt(cur)); cur.setDate(cur.getDate()+1); }
+  return out;
+}
 async function loadAlarms(){
-  const di=$("alm-day");
-  if(di){ if(!di.max)di.max=today(); if(!di.value)di.value=today(); }
-  const day=(di&&di.value)||today();
-  const isToday=(day===today());
+  const fi=$("alm-from"), ti2=$("alm-to");
+  if(fi){ if(!fi.max)fi.max=today(); if(!fi.value)fi.value=today(); }
+  if(ti2){ if(!ti2.max)ti2.max=today(); if(!ti2.value)ti2.value=today(); }
+  let from=(fi&&fi.value)||today(), to=(ti2&&ti2.value)||today();
+  if(from>to){ const t=from; from=to; to=t; }          // tolerate reversed range
+  const days=almDaysInRange(from,to);
   const active=LIVE?(LIVE.alarms|0):0;
-  // "active now" only means anything for today; a history day shows its date
-  $("alm-sub").innerHTML=isToday?`${active} active now &middot; ${day}`:`${pesc(day)}`;
+  const inclToday=(from<=today() && to>=today());
+  $("alm-sub").innerHTML=(from===to?pesc(from):`${pesc(from)} &rarr; ${pesc(to)}`)+
+    (inclToday?` &middot; ${active} active now`:"");
   const body=$("alm-body");
-  let txt=null;
-  try{const r=await fetch(`/logs/alarms-${day}.csv`);if(r.ok)txt=await r.text();}
-  catch(e){}
-  if(txt===null){
-    almRows=[];
-    body.innerHTML=`<div class="empty"><div class="big">&#9873;</div>`+
-      `No alarm log file for ${pesc(day)}.</div>`;return;
+  // fetch each day's log and collect the HIGH/LOW/OPEN rows (COMM excluded)
+  let hdr=null; const rows=[];
+  for(const d of days){
+    let txt=null;
+    try{const r=await fetch(`/logs/alarms-${d}.csv`);if(r.ok)txt=await r.text();}catch(e){}
+    if(!txt)continue;
+    const lines=txt.trim().split("\n").filter(l=>l.length);
+    if(lines.length<=1)continue;
+    const h=lines.shift().split(","); if(!hdr)hdr=h;
+    const ti=h.findIndex(x=>x.trim().toLowerCase()==="type");
+    for(const l of lines){ const c=splitCsv(l);
+      if(ti<0||(c[ti]||"").trim().toUpperCase()!=="COMM")rows.push(c); }
   }
-  const lines=txt.trim().split("\n").filter(l=>l.length);
-  if(lines.length<=1){
+  if(!rows.length){
     almRows=[];
     body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
-      `No alarms recorded on ${pesc(day)}.</div>`;return;
+      `No alarms in the selected range.</div>`;return;
   }
-  almHdr=lines.shift().split(",");
-  almRows=lines.map(l=>splitCsv(l));
-  // COMM link-loss is not an alarm - show only HIGH/LOW/OPEN
-  const ti=almHdr.findIndex(h=>h.trim().toLowerCase()==="type");
-  if(ti>=0)almRows=almRows.filter(c=>(c[ti]||"").trim().toUpperCase()!=="COMM");
-  if(!almRows.length){
-    body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
-      `No alarms recorded on ${pesc(day)}.</div>`;return;
-  }
-  almRows.reverse();          // newest first
+  almHdr=hdr;
+  rows.reverse();          // days ascending + each day chronological -> newest first
+  almRows=rows;
   almPage=0;
   renderAlarms();
-}
-/* step the alarm day by ±1 (Next never goes past today). Do the math in
-   LOCAL time - toISOString() would shift the date in a non-UTC timezone. */
-function almShift(delta){
-  const di=$("alm-day"); if(!di)return;
-  const base=di.value||today();
-  if(delta>0 && base>=today())return;
-  const pt=base.split("-");
-  const d=new Date(+pt[0],+pt[1]-1,+pt[2]); d.setDate(d.getDate()+delta);
-  const p=n=>String(n).padStart(2,"0");
-  di.value=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
-  loadAlarms();
 }
 function renderAlarms(){
   const body=$("alm-body"), total=almRows.length;
@@ -1761,11 +1758,11 @@ $("dl-from").onchange=renderData;
 $("dl-to").onchange=renderData;
 $("dl-search").oninput=renderData;
 
-/* Alarms page: day navigation */
-$("alm-prev").onclick=()=>almShift(-1);
-$("alm-next").onclick=()=>almShift(1);
-$("alm-today").onclick=()=>{$("alm-day").value=today();loadAlarms();};
-$("alm-day").onchange=loadAlarms;
+/* Alarms page: From-To date range */
+$("alm-show").onclick=loadAlarms;
+$("alm-today").onclick=()=>{$("alm-from").value=today();$("alm-to").value=today();loadAlarms();};
+$("alm-from").onchange=loadAlarms;
+$("alm-to").onchange=loadAlarms;
 
 /* ============================================================
    RESIZE — redraw active canvas
