@@ -1016,7 +1016,7 @@ function drawPolar(c){
    day's alarm log can be hundreds of rows and painting them all at once
    froze the page for a moment. */
 const PAGE_SZ=10;
-let almHdr=[], almRows=[], almPage=0;
+let almRecs=[], almPage=0;
 
 /* every YYYY-MM-DD from `from` to `to` inclusive, in LOCAL time (capped) */
 function almDaysInRange(from,to){
@@ -1039,7 +1039,7 @@ async function loadAlarms(){
   $("alm-sub").innerHTML=(from===to?pesc(from):`${pesc(from)} &rarr; ${pesc(to)}`)+
     (inclToday?` &middot; ${active} active now`:"");
   const body=$("alm-body");
-  // fetch each day's log and collect the HIGH/LOW/OPEN rows (COMM excluded)
+  // fetch each day's log, gather the raw event rows (chronological)
   let hdr=null; const rows=[];
   for(const d of days){
     let txt=null;
@@ -1048,51 +1048,69 @@ async function loadAlarms(){
     const lines=txt.trim().split("\n").filter(l=>l.length);
     if(lines.length<=1)continue;
     const h=lines.shift().split(","); if(!hdr)hdr=h;
-    const ti=h.findIndex(x=>x.trim().toLowerCase()==="type");
-    for(const l of lines){ const c=splitCsv(l);
-      if(ti<0||(c[ti]||"").trim().toUpperCase()!=="COMM")rows.push(c); }
+    for(const l of lines)rows.push(splitCsv(l));
   }
-  if(!rows.length){
-    almRows=[];
+  almRecs=hdr?buildAlarmRecords(rows,hdr):[];
+  if(!almRecs.length){
     body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
       `No alarms in the selected range.</div>`;return;
   }
-  almHdr=hdr;
-  rows.reverse();          // days ascending + each day chronological -> newest first
-  almRows=rows;
   almPage=0;
   renderAlarms();
 }
+/* Reconstruct one record per alarm episode (SET..CLEAR) from the raw event
+   rows - the same lifecycle the recorder's History shows, so both agree.
+   COMM is skipped (not an alarm). A new SET for a channel that is still open
+   closes the previous episode (a recorder restart or re-trigger ended it),
+   so an orphaned SET never shows a phantom "ACTIVE". */
+function buildAlarmRecords(rows,hdr){
+  const ix={}; hdr.forEach((h,i)=>ix[h.trim().toLowerCase()]=i);
+  const cT=ix.timestamp, cC=ix.channel, cG=ix.tag, cY=ix.type, cE=ix.event, cV=ix.value;
+  const sorted=rows.slice().sort((a,b)=>String(a[cT]||"")<String(b[cT]||"")?-1:1);
+  const recs=[], open={};
+  for(const r of sorted){
+    const ty=(r[cY]||"").trim().toUpperCase(); if(ty==="COMM")continue;
+    const ev=(r[cE]||"").trim().toUpperCase();
+    const key=(r[cC]||"")+"|"+ty, o=open[key];
+    if(ev==="SET"){
+      if(o!=null&&recs[o]&&!recs[o].clr)recs[o].clr=r[cT];   // restart / re-trigger
+      recs.push({ch:r[cC]||"",tag:r[cG]||"",type:r[cY]||"",val:r[cV]||"",
+                 set:r[cT]||"",ack:"",clr:""});
+      open[key]=recs.length-1;
+    }else if(ev==="ACK"){
+      if(o!=null&&recs[o]&&!recs[o].ack)recs[o].ack=r[cT];
+    }else if(ev==="CLEAR"){
+      if(o!=null&&recs[o]&&!recs[o].clr){recs[o].clr=r[cT];open[key]=null;}
+    }
+  }
+  recs.reverse();   // newest episode first
+  return recs;
+}
+const ALM_COLS=["Channel","Tag","Type","Value","Generated","Acknowledged","Resolved"];
+function almTime(ts){ return (ts&&ts.length>11)?esc(ts.slice(11)):esc(ts||""); }
 function renderAlarms(){
-  const body=$("alm-body"), total=almRows.length;
+  const body=$("alm-body"), total=almRecs.length;
   const pages=Math.max(1,Math.ceil(total/PAGE_SZ));
   if(almPage>=pages)almPage=pages-1; if(almPage<0)almPage=0;
-  const start=almPage*PAGE_SZ, slice=almRows.slice(start,start+PAGE_SZ);
-  // columns we special-case: value (reformat to the channel's decimals)
-  // and channel (to look that per-channel decimal count up from LIVE)
-  const valCol=almHdr.findIndex(h=>h.trim().toLowerCase()==="value");
-  const chCol =almHdr.findIndex(h=>h.trim().toLowerCase()==="channel");
+  const start=almPage*PAGE_SZ, slice=almRecs.slice(start,start+PAGE_SZ);
   let html=`<div class="tbl-wrap"><table><thead><tr>`+
-    almHdr.map(h=>`<th>${esc(h.trim())}</th>`).join("")+`</tr></thead><tbody>`;
-  slice.forEach(cols=>{
-    // decimals configured for this row's channel (fall back to as-logged)
-    let dec=null;
-    if(chCol>=0){
-      const m=/(\d+)/.exec(cols[chCol]||"");
-      if(m&&LIVE&&LIVE.ch){const ci=(+m[1])-1;
-        if(LIVE.ch[ci]&&LIVE.ch[ci].dec!=null)dec=LIVE.ch[ci].dec;}
-    }
-    html+="<tr>"+cols.map((cell,i)=>{
-      const c=esc((cell||"").trim());
-      const hl=(almHdr[i]||"").toLowerCase();
-      if(/type|state|status|event/.test(hl)&&c){
-        const clr=/clear|ok|normal|reset|off/i.test(c);
-        return `<td><span class="st${clr?" clr":""}">${c}</span></td>`;
-      }
-      if(i===valCol&&dec!=null&&c!==""&&!isNaN(Number(c)))
-        return `<td>${esc(fx(Number(c),dec))}</td>`;
-      return `<td>${c}</td>`;
-    }).join("")+"</tr>";
+    ALM_COLS.map(h=>`<th>${h}</th>`).join("")+`</tr></thead><tbody>`;
+  slice.forEach(r=>{
+    // value in the channel's configured decimals
+    const m=/(\d+)/.exec(r.ch||""); let dec=1;
+    if(m&&LIVE&&LIVE.ch){const ci=(+m[1])-1;
+      if(LIVE.ch[ci]&&LIVE.ch[ci].dec!=null)dec=LIVE.ch[ci].dec;}
+    const val=(r.val!==""&&!isNaN(Number(r.val)))?esc(fx(Number(r.val),dec)):esc(r.val||"");
+    const resolved=r.clr?almTime(r.clr):`<span class="st">ACTIVE</span>`;
+    html+="<tr>"+
+      `<td>${esc(r.ch)}</td>`+
+      `<td>${esc(r.tag)}</td>`+
+      `<td><span class="st">${esc(r.type)}</span></td>`+
+      `<td>${val}</td>`+
+      `<td>${almTime(r.set)}</td>`+
+      `<td>${r.ack?almTime(r.ack):"&ndash;"}</td>`+
+      `<td>${resolved}</td>`+
+    "</tr>";
   });
   html+="</tbody></table></div>";
   html+=pagerHtml(total,almPage,pages,"almGo","alarm","alarms");

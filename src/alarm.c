@@ -251,6 +251,17 @@ int alarm_records_load(time_t t0, time_t t1, alarm_rec_t *out, int max)
 
             if (!strcmp(ev, "SET")) {
                 if (t < t0 || t > t1) continue;
+                /* a new SET while an earlier episode for this channel is
+                 * still open means that episode ended (recorder restart or
+                 * re-trigger) - close it so it isn't shown as perpetually
+                 * ACTIVE while the channel now reads normal */
+                for (int k = n - 1; k >= 0; k--)
+                    if (!strcmp(out[k].ch, ch) &&
+                        !strcmp(out[k].type, ty) && out[k].clr_ts[0] == 0) {
+                        snprintf(out[k].clr_ts, sizeof(out[k].clr_ts),
+                                 "%s", ts);
+                        break;
+                    }
                 if (n == max) {          /* keep the newest */
                     memmove(&out[0], &out[1],
                             (size_t)(max - 1) * sizeof(out[0]));
