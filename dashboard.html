@@ -476,6 +476,12 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
     <section class="screen" id="s-alarm">
       <div class="scr-head"><h2>Alarms</h2>
         <span class="sub" id="alm-sub"></span></div>
+      <div class="ctl-row">
+        <button class="btn" id="alm-prev">&lsaquo; Prev day</button>
+        <label class="dl-lbl">Date <input type="date" id="alm-day"></label>
+        <button class="btn" id="alm-next">Next day &rsaquo;</button>
+        <button class="btn" id="alm-today">Today</button>
+      </div>
       <div id="alm-body"></div>
     </section>
 
@@ -1013,9 +1019,13 @@ const PAGE_SZ=10;
 let almHdr=[], almRows=[], almPage=0;
 
 async function loadAlarms(){
-  const day=today();
+  const di=$("alm-day");
+  if(di){ if(!di.max)di.max=today(); if(!di.value)di.value=today(); }
+  const day=(di&&di.value)||today();
+  const isToday=(day===today());
   const active=LIVE?(LIVE.alarms|0):0;
-  $("alm-sub").innerHTML=`${active} active now &middot; ${day}`;
+  // "active now" only means anything for today; a history day shows its date
+  $("alm-sub").innerHTML=isToday?`${active} active now &middot; ${day}`:`${pesc(day)}`;
   const body=$("alm-body");
   let txt=null;
   try{const r=await fetch(`/logs/alarms-${day}.csv`);if(r.ok)txt=await r.text();}
@@ -1023,13 +1033,13 @@ async function loadAlarms(){
   if(txt===null){
     almRows=[];
     body.innerHTML=`<div class="empty"><div class="big">&#9873;</div>`+
-      `No alarm log file for today.</div>`;return;
+      `No alarm log file for ${pesc(day)}.</div>`;return;
   }
   const lines=txt.trim().split("\n").filter(l=>l.length);
   if(lines.length<=1){
     almRows=[];
     body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
-      `No alarms recorded today.</div>`;return;
+      `No alarms recorded on ${pesc(day)}.</div>`;return;
   }
   almHdr=lines.shift().split(",");
   almRows=lines.map(l=>splitCsv(l));
@@ -1038,11 +1048,23 @@ async function loadAlarms(){
   if(ti>=0)almRows=almRows.filter(c=>(c[ti]||"").trim().toUpperCase()!=="COMM");
   if(!almRows.length){
     body.innerHTML=`<div class="empty"><div class="big">&#10003;</div>`+
-      `No alarms recorded today.</div>`;return;
+      `No alarms recorded on ${pesc(day)}.</div>`;return;
   }
   almRows.reverse();          // newest first
   almPage=0;
   renderAlarms();
+}
+/* step the alarm day by ±1 (Next never goes past today). Do the math in
+   LOCAL time - toISOString() would shift the date in a non-UTC timezone. */
+function almShift(delta){
+  const di=$("alm-day"); if(!di)return;
+  const base=di.value||today();
+  if(delta>0 && base>=today())return;
+  const pt=base.split("-");
+  const d=new Date(+pt[0],+pt[1]-1,+pt[2]); d.setDate(d.getDate()+delta);
+  const p=n=>String(n).padStart(2,"0");
+  di.value=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  loadAlarms();
 }
 function renderAlarms(){
   const body=$("alm-body"), total=almRows.length;
@@ -1738,6 +1760,12 @@ $("dl-pdf").onclick=downloadPDF;
 $("dl-from").onchange=renderData;
 $("dl-to").onchange=renderData;
 $("dl-search").oninput=renderData;
+
+/* Alarms page: day navigation */
+$("alm-prev").onclick=()=>almShift(-1);
+$("alm-next").onclick=()=>almShift(1);
+$("alm-today").onclick=()=>{$("alm-day").value=today();loadAlarms();};
+$("alm-day").onchange=loadAlarms;
 
 /* ============================================================
    RESIZE — redraw active canvas
