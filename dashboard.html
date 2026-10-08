@@ -524,6 +524,7 @@ td .st.clr{background:rgba(65,214,156,.14);color:var(--ok)}
           <div class="cfg-tab" data-g="factory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Factory settings</div>
           <div class="cfg-tab" data-g="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M21 20c0-2.4-1.3-4.5-3.3-5.4"/></svg>User accounts</div>
           <div class="cfg-tab" data-g="display"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Display</div>
+          <div class="cfg-tab" data-g="diag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg>Diagnostics</div>
         </div>
         <div class="set2-main" id="cfg-body">Loading&hellip;</div>
       </div>
@@ -1076,7 +1077,9 @@ async function loadAlarms(){
     for(const l of txt.trim().split("\n")){
       if(!l||/^timestamp/i.test(l))continue;
       const p=l.split(",");
-      log.push({ts:p[0]||"",cat:(p[1]||"").trim(),desc:p[2]||"",
+      const cat=(p[1]||"").trim();
+      if(/^COMM$/i.test(cat))continue;   // internal link diagnostics -> Settings, not the audit view
+      log.push({ts:p[0]||"",cat:cat,desc:p[2]||"",
                 user:(p[3]||"").trim(),src:"event"});
     }
   }
@@ -1260,7 +1263,9 @@ const GMETA={
   display:{t:"Display",d:"How this browser lays out the dashboard. Saved in this browser only - no password needed.",
     ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>'},
   email:{t:"Email notifications",d:"SMTP server and alarm recipients. On any alarm the recorder emails the master list plus that channel group's recipients.",
-    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'}
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'},
+  diag:{t:"Diagnostics",d:"Internal card-link (RS-485) status events. Kept for service only - not shown in the operator alarm/event audit view.",
+    ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg>'}
 };
 function cfgHead(g){const m=GMETA[g];if(!m)return"";
   return `<div class="cfg-head"><div class="cfg-hic">${m.ic}</div><div><div class="cfg-ht">${m.t}</div><div class="cfg-hd">${cesc(m.d)}</div></div></div>`;}
@@ -1324,6 +1329,34 @@ function renderDisplay(B){
   const lb=$("cfg-lockbtn");if(lb)lb.onclick=doLock;
   const sel=$("f_trendstyle");if(sel)sel.onchange=()=>{trendStyle=sel.value;localStorage.setItem("trendStyle",trendStyle);applyTrendStyle();};
 }
+/* Internal card-link (COMM) diagnostics - the events filtered out of the
+   operator audit view. Last 7 days, newest first. Service-locked (Settings). */
+async function renderDiag(B){
+  B.innerHTML=cfgHeader("diag")+`<div class="cfg-inner" id="diag-body">`+
+    `<div style="color:var(--mut)">Loading card-link diagnostics&hellip;</div></div>`;
+  const lb=$("cfg-lockbtn");if(lb)lb.onclick=doLock;
+  const p=n=>String(n).padStart(2,"0"), end=new Date(), rows=[];
+  for(let k=0;k<7;k++){
+    const d=new Date(end); d.setDate(end.getDate()-k);
+    const ds=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+    let txt=null; try{const r=await fetch(`/logs/events-${ds}.csv`);if(r.ok)txt=await r.text();}catch(e){}
+    if(!txt)continue;
+    for(const l of txt.trim().split("\n")){
+      if(!l||/^timestamp/i.test(l))continue;
+      const c=l.split(",");
+      if(!/^COMM$/i.test((c[1]||"").trim()))continue;
+      rows.push({ts:c[0]||"",desc:c[2]||""});
+    }
+  }
+  rows.sort((a,b)=>String(a.ts)<String(b.ts)?1:-1);
+  const el=$("diag-body"); if(!el)return;
+  if(!rows.length){ el.innerHTML=`<div style="color:var(--mut)">No card-link events in the last 7 days.</div>`; return; }
+  el.innerHTML=`<div class="cfg-note2">Internal card-link (RS-485) status, kept for service. Not shown in the operator alarm/event audit. Last 7 days.</div>`+
+    `<div class="tbl-wrap" style="max-height:52vh;overflow:auto"><table>`+
+    `<thead><tr><th>Timestamp</th><th>Card-link event</th></tr></thead><tbody>`+
+    rows.slice(0,300).map(r=>`<tr><td>${esc(r.ts)}</td><td>${esc(r.desc)}</td></tr>`).join("")+
+    `</tbody></table></div>`;
+}
 function renderFactoryGate(B){
   B.innerHTML=cfgHeader("factory")+
     `<div class="cfg-unlock"><h3>Manufacturer password</h3>`+
@@ -1378,6 +1411,7 @@ function renderCfg(){
   if((cfgGroup==="users"&&!canUsers)||(cfgGroup==="factory"&&!canFactory))cfgGroup="channels";
   if(nav)nav.querySelectorAll(".cfg-tab").forEach(t=>t.classList.toggle("on",t.dataset.g==cfgGroup));
   if(cfgGroup==="display"){renderDisplay(B);return;}
+  if(cfgGroup==="diag"){renderDiag(B);return;}
   /* Factory settings needs the extra service password */
   if(cfgGroup==="factory"&&!CFG.sess.factory){renderFactoryGate(B);return;}
 
